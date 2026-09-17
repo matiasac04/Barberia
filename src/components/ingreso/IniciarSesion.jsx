@@ -1,4 +1,5 @@
 import PieDePagina from '../comunes/PieDePagina';
+import logoTijera from '../../assets/logo-tijera.svg';
 function IniciarSesion({ authScreen, authFeedback, handleLoginSubmit, handleRegisterSubmit, handleGoogleLogin, loginEmail, loginPassword, onShowLogin, onShowRegister, registerForm, setLoginEmail, setLoginPassword, setRegisterForm }) {
   const esReg = authScreen === 'register';
   return (
@@ -7,9 +8,7 @@ function IniciarSesion({ authScreen, authFeedback, handleLoginSubmit, handleRegi
         <div className="auth-copy">
           <a className="brand-lockup" href="/" onClick={(e) => e.preventDefault()}>
             <span className="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="6" cy="6" r="2.6" /><circle cx="6" cy="18" r="2.6" /><path d="M8.5 7.9 21 18.4M8.5 16.1 21 5.6M13.6 12h1.6" />
-              </svg>
+              <img src={logoTijera} alt="" width="30" height="30" />
             </span>
             <span className="brand-text"><strong>Barberia</strong><small>Qué cortecito</small></span>
           </a>

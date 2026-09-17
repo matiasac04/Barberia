@@ -2,7 +2,7 @@
 .brand-bar { max-width: 1120px; margin: 0 auto 18px; }
 .brand-lockup { display: inline-flex; align-items: center; gap: 12px; text-decoration: none; }
 .brand-mark { width: 46px; height: 46px; flex: none; border-radius: 14px; display: grid; place-items: center; background: var(--gold-gradient); color: #1a1206; box-shadow: 0 12px 28px rgba(230, 178, 84, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.55); }
-.brand-mark svg { width: 26px; height: 26px; }
+.brand-mark img { width: 26px; height: 26px; }
 .brand-text { display: grid; gap: 2px; line-height: 1.1; }
 .brand-text strong { font-family: var(--font-display); font-size: 1.22rem; letter-spacing: 0.01em; color: var(--text-hi); }
 .brand-text small { color: var(--text-low); text-transform: uppercase; letter-spacing: 0.24em; font-size: 0.6rem; font-weight: 700; }
@@ -15,7 +15,7 @@
 .auth-shell { width: min(1040px, 100%); margin: 0; }
 .auth-copy { display: grid; align-content: start; gap: 10px; padding: 14px 8px 14px 4px; }
 .auth-copy .brand-mark { width: 54px; height: 54px; border-radius: 16px; margin-bottom: 10px; }
-.auth-copy .brand-mark svg { width: 30px; height: 30px; }
+.auth-copy .brand-mark img { width: 30px; height: 30px; }
 .auth-copy .brand-text strong { font-size: 1.42rem; }
 .simple-tag { display: inline-flex; width: fit-content; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.7rem; font-weight: 700; background: rgba(230, 178, 84, 0.1); color: var(--gold-soft); border: 1px solid var(--line); }
 .simple-tag::before { content: ''; width: 7px; height: 7px; border-radius: 999px; background: var(--gold); box-shadow: 0 0 0 5px rgba(230, 178, 84, 0.18); }
