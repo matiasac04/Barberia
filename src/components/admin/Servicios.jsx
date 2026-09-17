@@ -1,3 +1,4 @@
+// ── Panel de servicios (alta, edición, eliminación) ───
 function Servicios({ onCancelServiceEdit, onDeleteService, onServiceFormChange, onServiceSubmit, onStartEditService, serviceForm, services }) {
   return (
     <article className="simple-card admin-panel">

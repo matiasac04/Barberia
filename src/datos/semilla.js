@@ -1,3 +1,4 @@
+// ── Datos de semilla (fallback de arranque de la app) ─
 export const barbers = []
 
 export const services = []

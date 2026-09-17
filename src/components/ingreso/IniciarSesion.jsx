@@ -1,7 +1,9 @@
+// ── Pantalla de inicio de sesión / registro ───────────
 import PieDePagina from '../comunes/PieDePagina';
 import logoTijera from '../../assets/logo-tijera.svg';
 function IniciarSesion({ authScreen, authFeedback, handleLoginSubmit, handleRegisterSubmit, handleGoogleLogin, loginEmail, loginPassword, onShowLogin, onShowRegister, registerForm, setLoginEmail, setLoginPassword, setRegisterForm }) {
   const esReg = authScreen === 'register';
+  // ── Render de login o registro ──────────────────────
   return (
     <main className="simple-page auth-page">
       <section className="simple-hero auth-shell">

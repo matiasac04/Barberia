@@ -1,4 +1,6 @@
+// ── Panel de profesionales (altas, bajas, edición) ────
 function Profesionales({ allBarbers, barbers, barberForm, onBarberFormChange, onBarberSubmit, onDeleteBarber, onStartEditBarber, onCancelBarberEdit, onToggleBarberActivo }) {
+  // ── Separar activos de desactivados ────────────────
   const fuente = Array.isArray(allBarbers) && allBarbers.length > 0 ? allBarbers : barbers;
   const activos = fuente.filter((b) => b.activo !== false);
   const desactivados = fuente.filter((b) => b.activo === false);

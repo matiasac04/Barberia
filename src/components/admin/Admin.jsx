@@ -1,3 +1,4 @@
+// ── Panel de administración (orquestador de paneles) ─
 import { useEffect, useMemo, useState } from 'react';
 import { toIsoDate } from '../../utilidades/ayudantes';
 import Agenda from './Agenda';
@@ -8,6 +9,8 @@ import Resumen from './Resumen';
 import Profesionales from './Profesionales';
 import Horarios from './Horarios';
 import Servicios from './Servicios';
+
+// ── Constantes de formularios y opciones ──────────────
 const bookingStatusLabels = { pending: 'Pendiente', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'No se presentó', cancelled: 'Cancelado', expired: 'Expirado' };
 const bookingStatusOptions = [
   { value: 'pending', label: 'Pendiente' }, { value: 'confirmed', label: 'Confirmado' },
@@ -23,7 +26,9 @@ const createBookingForm = (b) => ({
   customerName: b?.customerName ?? '', customerPhone: b?.customerPhone ?? '', barberId: b?.barberId ?? '',
   serviceId: b?.serviceId ?? '', bookingDate: b?.bookingDate ?? '', time: b?.time ?? '', status: b?.status ?? 'pending',
 });
+
 function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, horarioLaboral, onAddBarber, onAddService, onDeleteBarber, onDeleteBooking, onDeleteService, onLogout, onSaveDateBlockouts, onSaveHorarios, onToggleBarberActivo, onUpdateBarber, onUpdateBooking, onUpdateService, services, timeSlots }) {
+  // ── Estado de formularios y selección ─────────────
   const [activeTab, setActiveTab] = useState('overview');
   const [barberForm, setBarberForm] = useState(emptyBarberForm);
   const [serviceForm, setServiceForm] = useState(emptyServiceForm);
@@ -34,12 +39,14 @@ function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, hora
   const [notice, setNotice] = useState({ type: 'idle', message: 'Administrá profesionales, servicios, horarios y turnos desde aquí.' });
   useEffect(() => { if (barbers.length === 0) { setSelectedScheduleBarber(''); return; } if (!barbers.some((b) => String(b.id) === String(selectedScheduleBarber))) setSelectedScheduleBarber(barbers[0].id); }, [barbers, selectedScheduleBarber]);
   useEffect(() => { if (bookings.length === 0) { setSelectedBookingId(''); setBookingForm(createBookingForm()); return; } const sel = bookings.find((b) => b.id === selectedBookingId) ?? bookings[0]; setSelectedBookingId(sel.id); setBookingForm(createBookingForm(sel)); }, [bookings, selectedBookingId]);
+  // ── Datos derivados (agenda y estados) ────────────
   const agendaGroups = useMemo(() => {
     const g = new Map();
     bookings.filter((b) => b.status !== 'cancelled').slice().sort((l, r) => `${l.bookingDate}T${l.time}`.localeCompare(`${r.bookingDate}T${r.time}`)).forEach((b) => { const e = g.get(b.bookingDate) ?? []; e.push(b); g.set(b.bookingDate, e); });
     return [...g.entries()];
   }, [bookings]);
   const statusCount = useMemo(() => bookings.reduce((a, b) => { a[b.status] = (a[b.status] ?? 0) + 1; return a; }, { pending: 0, confirmed: 0, completed: 0, 'no-show': 0, cancelled: 0 }), [bookings]);
+  // ── Handlers de formularios ───────────────────────
   const handleBarberSubmit = async (e) => {
     e.preventDefault();
     if (!barberForm.name.trim()) { setNotice({ type: 'error', message: 'Escribí un nombre para guardar el profesional.' }); return; }
@@ -68,6 +75,7 @@ function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, hora
     const ok = await onUpdateBooking(selectedBookingId, bookingForm);
     setNotice(ok ? { type: 'success', message: 'Turno actualizado en la base de datos.' } : { type: 'error', message: 'No se pudo actualizar el turno. Revisá la conexión y que la sesión siga activa.' });
   };
+  // ── Render del panel ──────────────────────────────
   const selectedBooking = bookings.find((b) => b.id === selectedBookingId) ?? bookings[0] ?? null;
   const startEditBarber = (b) => setBarberForm({ id: b.id, name: b.name, email: b.email ?? '', telefono: b.telefono ?? '' });
   const startEditService = (s) => setServiceForm({ id: s.id, name: s.name, price: String(s.price), duracion: s.durationMinutes != null ? String(s.durationMinutes) : '' });

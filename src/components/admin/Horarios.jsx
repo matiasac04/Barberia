@@ -1,6 +1,8 @@
+// ── Panel de horarios y bloqueos (semanal + puntual) ──
 import { useEffect, useState } from 'react';
 import { WORKING_DAYS, getDateBlockedSlots, getWeekdayPattern, getWeeklySlots, toIsoDate } from '../../utilidades/ayudantes';
 
+// ── Constantes de fechas y días laborales ────────────
 const today = new Date();
 const minIso = toIsoDate(today);
 const maxDate = new Date(today); maxDate.setDate(maxDate.getDate() + 30);
@@ -14,6 +16,7 @@ const WEEKDAY_LABELS = [
   { day: 6, label: 'Sábado' },
 ];
 
+// ── Helper del formulario semanal ─────────────────────
 const buildWeeklyForm = (barberId, horarioLaboral) => {
   const rows = (Array.isArray(horarioLaboral) ? horarioLaboral : []).filter((r) => String(r.idProfesional) === String(barberId));
   const form = {};
@@ -27,6 +30,7 @@ const buildWeeklyForm = (barberId, horarioLaboral) => {
 };
 
 function Horarios({ barbers, dateBlockouts, horarioLaboral, onSaveDateBlockouts, onSaveHorarios, selectedScheduleBarber, setSelectedScheduleBarber, selectedScheduleDate, setSelectedScheduleDate, timeSlots }) {
+  // ── Estado y sincronización ─────────────────────────
   const [msg, setMsg] = useState(null);
   const [weeklyForm, setWeeklyForm] = useState(() => buildWeeklyForm(selectedScheduleBarber, horarioLaboral));
   const [savingWeekly, setSavingWeekly] = useState(false);
@@ -35,6 +39,7 @@ function Horarios({ barbers, dateBlockouts, horarioLaboral, onSaveDateBlockouts,
 
   if (!selectedScheduleBarber || !Array.isArray(barbers) || barbers.length === 0) return <article className="simple-card admin-panel"><h2>Horarios</h2><p className="admin-note">Agregá un profesional para gestionar sus horarios.</p></article>;
 
+  // ── Datos derivados de la fecha y bloqueos ─────────
   const weekdayPattern = getWeekdayPattern(new Date(`${selectedScheduleDate}T00:00:00`));
   const cerrado = !weekdayPattern;
   const daySlots = weekdayPattern ? getWeeklySlots(horarioLaboral, selectedScheduleBarber, weekdayPattern, timeSlots) : [];
@@ -80,6 +85,7 @@ function Horarios({ barbers, dateBlockouts, horarioLaboral, onSaveDateBlockouts,
     await editar({ slots: tiene ? bloqueados.filter((s) => s !== slot) : [...bloqueados, slot] });
   };
 
+  // ── Render del panel ──────────────────────────
   return (
     <article className="simple-card admin-panel">
       <h2>Horarios</h2>

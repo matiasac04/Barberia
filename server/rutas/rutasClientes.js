@@ -3,6 +3,7 @@ const router = require("express").Router();
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware } = require("../autenticacion");
 
+// ── Turnos del cliente ────────────────────────────────
 // VER MIS TURNOS
 router.get("/clientes/:idCliente/turnos", jwtMiddleware, async (req, res) => {
   try {

@@ -1,3 +1,4 @@
+// ── Formato de fechas e ISO ───────────────────────────
 const dateFormatter = new Intl.DateTimeFormat('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })
 
 export const safeClone = (value) => (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)))
@@ -10,6 +11,27 @@ export const toIsoDate = (value) => {
 
 export const isBlockedWeekday = (weekday) => weekday === 0 || weekday === 1
 
+export const formatCalendarLabel = (date) => {
+  const [weekday, day, month] = dateFormatter.format(date).split(' ')
+  return { label: weekday.replace('.', ''), date: `${day} ${month}` }
+}
+
+export const getWeekdayPattern = (date) => {
+  const weekday = date.getDay()
+  if (isBlockedWeekday(weekday)) return null
+  const mapping = { 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' }
+  return mapping[weekday] ?? null
+}
+
+export const resolveCalendarDetails = (bookingDate) => {
+  const dateStr = String(bookingDate).trim().split('T')[0]
+  const d = new Date(`${dateStr}T00:00:00`)
+  const pat = getWeekdayPattern(d)
+  const lbl = formatCalendarLabel(d)
+  return { dayId: pat ?? 'sun', dayLabel: lbl.label, dayDate: lbl.date }
+}
+
+// ── Slots y horarios laborales ────────────────────────
 export const SLOT_MINUTES = 30
 export const WORKING_DAYS = [2, 3, 4, 5, 6]
 const weekdayPatternToDay = { tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 }
@@ -40,26 +62,7 @@ export const getWeeklySlots = (horarioLaboral, barberId, weekdayPattern, fallbac
   return [...new Set(ranges.flatMap((r) => generateSlotsFromRange(r.start, r.end)))].sort()
 }
 
-export const getWeekdayPattern = (date) => {
-  const weekday = date.getDay()
-  if (isBlockedWeekday(weekday)) return null
-  const mapping = { 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' }
-  return mapping[weekday] ?? null
-}
-
-export const formatCalendarLabel = (date) => {
-  const [weekday, day, month] = dateFormatter.format(date).split(' ')
-  return { label: weekday.replace('.', ''), date: `${day} ${month}` }
-}
-
-export const resolveCalendarDetails = (bookingDate) => {
-  const dateStr = String(bookingDate).trim().split('T')[0]
-  const d = new Date(`${dateStr}T00:00:00`)
-  const pat = getWeekdayPattern(d)
-  const lbl = formatCalendarLabel(d)
-  return { dayId: pat ?? 'sun', dayLabel: lbl.label, dayDate: lbl.date }
-}
-
+// ── Parseo de turnos y estado ─────────────────────────
 export const parseBookingDateTime = (booking) => {
   if (!booking?.bookingDate || !booking?.time) return null
 
@@ -113,6 +116,7 @@ export const formatCountdown = (booking) => {
   return `En ${Math.max(minutes, 1)} min`
 }
 
+// ── Bloqueos de fecha y disponibilidad ────────────────
 const getDateBlockoutRows = (dateBlockouts, barberId, bookingDate) => {
   if (!Array.isArray(dateBlockouts)) return []
   const dateStr = String(bookingDate).trim().split('T')[0]

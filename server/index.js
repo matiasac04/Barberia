@@ -1,3 +1,4 @@
+// ── Imports y configuración ───────────────────────────
 require('dotenv').config();
 
 const express = require("express");
@@ -11,6 +12,7 @@ const rutasTurnos = require("./rutas/rutasTurnos");
 const rutasProfesionales = require("./rutas/rutasProfesionales");
 const rutasServicios = require("./rutas/rutasServicios");
 
+// ── Servidor y middleware ─────────────────────────────
 const app = express();
 
 app.use(helmet());
@@ -33,12 +35,14 @@ const authLimiter = rateLimit({
 });
 app.use(["/login", "/registro"], authLimiter);
 
+// ── Rutas ─────────────────────────────────────────────
 app.use(rutasAuth);
 app.use(rutasClientes);
 app.use(rutasTurnos);
 app.use(rutasProfesionales);
 app.use(rutasServicios);
 
+// ── Manejo de errores ─────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Ruta no encontrada." });
 });
@@ -48,6 +52,7 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: "Error interno del servidor." });
 });
 
+// ── Iniciar servidor ──────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {

@@ -1,3 +1,4 @@
+// ── Configuración de la conexión ──────────────────────
 require('dotenv').config();
 
 const sql = require('mssql');
@@ -14,6 +15,7 @@ const config = {
     port: 1433                        
 };
 
+// ── Pool de conexiones ────────────────────────────────
 let pool; 
 let lastPoolCheck = 0;
 const POOL_PING_INTERVAL = 5000;

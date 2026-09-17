@@ -3,6 +3,7 @@ const router = require("express").Router();
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 
+// ── Disponibilidad (turnos libres/ocupados) ───────────
 // VER TURNOS DISPONIBLES
 router.get("/turnos/disponibles", async (req, res) => {
   const { fecha, idProfesional } = req.query;
@@ -35,6 +36,7 @@ router.get("/turnos/ocupados", async (req, res) => {
   }
 });
 
+// ── Listar turnos (admin) ─────────────────────────────
 // LISTAR TODOS LOS TURNOS (ADMIN)
 router.get("/turnos", jwtMiddleware, requireAdmin, async (req, res) => {
   try {
@@ -58,6 +60,7 @@ router.get("/turnos", jwtMiddleware, requireAdmin, async (req, res) => {
   }
 });
 
+// ── Reservar turno ────────────────────────────────────
 // RESERVAR TURNO
 router.post("/turnos", jwtMiddleware, async (req, res) => {
   const { idCliente, idProfesional, idServicio, fecha, horaInicio, telefono } = req.body;
@@ -127,6 +130,7 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
   }
 });
 
+// ── Cancelar, editar y eliminar turnos ────────────────
 // CANCELAR TURNO
 router.patch("/turnos/:id/cancelar", jwtMiddleware, async (req, res) => {
   try {

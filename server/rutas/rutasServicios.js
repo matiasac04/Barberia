@@ -3,6 +3,7 @@ const router = require("express").Router();
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 
+// ── CRUD servicios ────────────────────────────────────
 // LISTAR SERVICIOS (para el turnero)
 router.get("/servicios", async (req, res) => {
   try {

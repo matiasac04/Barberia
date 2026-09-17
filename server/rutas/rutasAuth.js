@@ -5,6 +5,7 @@ const bcrypt = require("bcryptjs");
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, JWT_SECRET } = require("../autenticacion");
 
+// ── Helpers de verificación ───────────────────────────
 const verificarPassword = async (passwordPlano, hash) => {
   if (!hash) return { ok: false, hash };
   if (String(hash).startsWith("$2")) return { ok: await bcrypt.compare(passwordPlano, hash), hash };
@@ -14,6 +15,7 @@ const verificarPassword = async (passwordPlano, hash) => {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// ── Registro de cliente ───────────────────────────────
 // REGISTRO
 router.post("/registro", async (req, res) => {
   const { nombre, apellido, email, telefono, password } = req.body;
@@ -54,6 +56,7 @@ router.post("/registro", async (req, res) => {
   }
 });
 
+// ── Login (admin o cliente) ───────────────────────────
 // LOGIN
 router.post("/login", async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -138,6 +141,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
+// ── Verificar token JWT ───────────────────────────────
 // VERIFICAR TOKEN (si da 401, el token venció o es inválido)
 router.get("/verificar", jwtMiddleware, async (req, res) => {
   res.json({ valido: true, role: req.user.role ?? 'client', idCliente: req.user.idCliente ?? null, idAdmin: req.user.idAdmin ?? null });

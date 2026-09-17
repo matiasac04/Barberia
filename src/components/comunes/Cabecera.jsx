@@ -1,3 +1,4 @@
+// ── Cabecera con logo y nombre de la barbería ─────────
 import logoTijera from '../../assets/logo-tijera.svg'
 function Cabecera({ subtitle = 'Qué cortecito' }) {
   return (

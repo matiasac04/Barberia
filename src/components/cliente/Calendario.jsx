@@ -1,8 +1,10 @@
+// ── Calendario mensual para elegir fecha de turno ─────
 import { useState } from 'react';
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const toLocalIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 function Calendario({ getFreeCount, maxDate, minDate, onSelectDate, selectedDate, totalSlots }) {
+  // ── Estado y cálculo del mes visible ──────────────
   const [view, setView] = useState(() => { const a = new Date(`${selectedDate}T00:00:00`); return new Date(a.getFullYear(), a.getMonth(), 1); });
   const monthStart = new Date(view.getFullYear(), view.getMonth(), 1);
   const leadingBlanks = (monthStart.getDay() + 6) % 7;
@@ -16,6 +18,7 @@ function Calendario({ getFreeCount, maxDate, minDate, onSelectDate, selectedDate
     ...Array.from({ length: leadingBlanks }, (_, i) => ({ day: null, key: `b-${i}` })),
     ...Array.from({ length: daysInMonth }, (_, i) => ({ day: i + 1, key: `d-${i + 1}` })),
   ];
+  // ── Render del calendario ─────────────────────────
   return (
     <div className="calendar-shell">
       <div className="calendar-head">

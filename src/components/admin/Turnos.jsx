@@ -1,3 +1,4 @@
+// ── Panel de turnos admin (editar y eliminar turnos) ──
 const bookingStatusLabels = { pending: 'Pendiente', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'No se presentó', cancelled: 'Cancelado', expired: 'Expirado' };
 function Turnos({ barbers, bookingForm, bookingStatusOptions, bookings, onBookingFormChange, onBookingSubmit, onDeleteBooking, onStartEditBooking, services, selectedBooking }) {
   return (

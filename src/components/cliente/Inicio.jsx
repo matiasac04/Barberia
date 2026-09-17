@@ -1,3 +1,4 @@
+// ── Turnero del cliente (reserva de turnos en 5 pasos) ─
 import Calendario from './Calendario';
 import PieDePagina from '../comunes/PieDePagina';
 import Cabecera from '../comunes/Cabecera';
@@ -5,9 +6,11 @@ import { getDayFreeSlots, getWeekdayPattern } from '../../utilidades/ayudantes';
 const avatarInitials = (name) => name.split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 const isClosedDay = (ds) => !getWeekdayPattern(new Date(`${ds}T00:00:00`));
 function Inicio({ availableSlots, barbers, currentBarber, currentService, currentDay, currentUser, customerName, customerPhone, dateBlockouts, dayCalendarMax, dayCalendarMin, daySlots, feedback, handleSubmit, loadingAvailability, nextBookings, occupancyCount, onLogout, onShowMyBookings, horarioLaboral, selectedBarber, selectedDate, selectedService, selectedTime, selectedTimeIsTaken, services, setCustomerName, setCustomerPhone, setSelectedBarber, setSelectedDate, setSelectedService, setSelectedTime, submitting, takenSlots, timeSlots, unavailableSlots }) {
+  // ── Lógica derivada del día y profesionales ────────
   if (!currentBarber || !currentService) return null;
   const dayIsClosed = currentDay.id === 'sun';
   const barberFreeCount = (bid) => (dayIsClosed ? 0 : getDayFreeSlots(takenSlots, bid, selectedDate, timeSlots, dateBlockouts, horarioLaboral).length);
+  // ── Render de la pantalla ─────────────────────────
   return (
     <main className="simple-page">
       <Cabecera />

@@ -3,9 +3,11 @@ const router = require("express").Router();
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 
+// ── Helpers de profesionales ──────────────────────────
 const generarEmailProfesional = () => `prof_${Date.now()}_${Math.floor(Math.random() * 1000000)}@barberia.local`;
 const normalizarEmailOpcional = (email) => (email && String(email).trim() ? String(email).trim() : null);
 
+// ── CRUD profesionales ────────────────────────────────
 // LISTAR PROFESIONALES (activos para el turnero; con ?incluirInactivos=1 trae todos)
 router.get("/profesionales", async (req, res) => {
   try {
@@ -110,6 +112,7 @@ router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res)
   }
 });
 
+// ── Horarios laborales ────────────────────────────────
 // LEER HORARIOS LABORALES (todos, para el turnero y el admin)
 router.get("/horarios", async (req, res) => {
   try {
@@ -166,6 +169,7 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
   }
 });
 
+// ── Bloqueos por fecha ────────────────────────────────
 // BLOQUEOS POR FECHA: listar todos (para el turnero)
 router.get("/bloqueos", async (req, res) => {
   try {

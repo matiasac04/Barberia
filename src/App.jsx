@@ -1,3 +1,4 @@
+// ── Imports ──────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import './App.css';
 import Admin from './components/admin/Admin';
@@ -9,11 +10,13 @@ import { initialTakenSlots, timeSlots } from './datos/semilla';
 import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, verificarToken } from './servicios/api';
 import { canCancelBooking, formatCalendarLabel, getDateBlockedSlots, getWeekdayPattern, getWeeklySlots, isBlockedWeekday, resolveBookingStatus, resolveCalendarDetails, safeClone, toIsoDate } from './utilidades/ayudantes';
 
+// ── Constantes de calendario ─────────────────────────
 const today = new Date(), calendarStart = new Date(today), calendarEnd = new Date(today);
 calendarStart.setHours(0, 0, 0, 0); calendarEnd.setDate(calendarEnd.getDate() + 30); calendarEnd.setHours(23, 59, 59, 999);
 const initialCalendarDate = toIsoDate(calendarStart);
 
 function App() {
+  // ── Estado global ────────────────────────────────
   const [mainView, setMainView] = useState('client');
   const [token, setToken] = useState(() => { try { return localStorage.getItem('token') ?? ''; } catch { return ''; } });
   const [currentUser, setCurrentUser] = useState(() => { try { return JSON.parse(localStorage.getItem('currentUser') ?? 'null'); } catch { return null; } });
@@ -39,10 +42,12 @@ function App() {
   const [horarioLaboral, setHorarioLaboral] = useState([]);
   const [bookedRange, setBookedRange] = useState([]);
 
+  // ── Sincronización de selección ───────────────────
   useEffect(() => { if (barbers.length > 0 && !barbers.some((b) => b.id === selectedBarber)) setSelectedBarber(barbers[0].id); }, [barbers, selectedBarber]);
   useEffect(() => { if (services.length > 0 && !services.some((s) => s.id === selectedService)) setSelectedService(services[0].id); }, [selectedService, services]);
   useEffect(() => { setCustomerName(currentUser?.name ?? ''); setCustomerPhone(currentUser?.phone ?? ''); }, [currentUser]);
 
+  // ── Sesión y autenticación ───────────────────────
   const expulsarPorSesion = useCallback(() => {
     setToken(''); setCurrentUser(null); setConfirmedBookings([]);
     try { localStorage.removeItem('token'); localStorage.removeItem('currentUser'); history.replaceState(null, '', window.location.pathname); } catch {}
@@ -59,6 +64,7 @@ function App() {
     return () => { cancelado = true; };
   }, [token, currentUser, expulsarPorSesion]);
 
+  // ── Carga de datos desde la API ───────────────────
   const cargarProfesionales = useCallback(async () => {
     try {
       const p = await obtenerProfesionales();
@@ -80,6 +86,7 @@ function App() {
     } catch {}
   }, []);
 
+  // ── Carga inicial de datos (Profesionales/Servicios/Bloqueos/Horarios) ──
   useEffect(() => {
     let cancelado = false;
     Promise.all([obtenerProfesionales(), obtenerProfesionales(true), obtenerServicios(), obtenerBloqueos(), obtenerHorarios(), obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd))])
@@ -149,6 +156,7 @@ function App() {
   }, [token, expulsarPorSesion, normalizarHoraApi]);
   useEffect(() => { if (isAuthenticated && currentUser?.role === 'admin') cargarTurnosAdmin(); }, [isAuthenticated, cargarTurnosAdmin, currentUser?.role]);
 
+  // ── Disponibilidad del día (slots libres/ocupados) ──
   const takenSlots = useMemo(() => {
     const snap = safeClone(initialTakenSlots);
     const meter = (barberId, dayKey, time) => {
@@ -179,6 +187,7 @@ function App() {
   const isSundayOrMonday = isBlockedWeekday(selectedDateObject.getDay());
   const isOutOfRange = selectedDateObject < calendarStart || selectedDateObject > calendarEnd;
 
+  // ── Selección de fecha (validaciones) ──────────────
   const handleCalendarChange = (nextDate) => {
     const nextDateObject = new Date(`${nextDate}T00:00:00`);
     if (Number.isNaN(nextDateObject.getTime())) return;
@@ -187,6 +196,7 @@ function App() {
     setSelectedDate(nextDate);
   };
 
+  // ── Handlers de sesión (logout, login, registro, Google) ──
   const handleLogout = () => {
     setToken(''); setCurrentUser(null); setConfirmedBookings([]);
     try { localStorage.removeItem('token'); localStorage.removeItem('currentUser'); history.replaceState(null, '', window.location.pathname); } catch {}
@@ -235,6 +245,7 @@ function App() {
     } catch (error) { setAuthFeedback({ type: 'error', message: error.message || 'Error al registrar el cliente.' }); }
   };
 
+  // ── Reserva de turno ───────────────────────────────
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!customerName.trim() || !customerPhone.trim()) { setFeedback({ type: 'error', message: 'Completá tu nombre y teléfono para confirmar el turno.' }); return; }
@@ -254,11 +265,13 @@ function App() {
     finally { setSubmitting(false); }
   };
 
+  // ── Datos derivados para vista del cliente ─────────
   const occupancyCount = daySlots.length - availableSlots.length; const currentUserEmail = currentUser?.email ?? '';
   const currentUserBookings = confirmedBookings.filter((b) => b.ownerEmail === currentUserEmail);
   const pendingBookings = currentUserBookings.filter((b) => b.status === 'pending');
   const expiredBookings = currentUserBookings.filter((b) => b.status === 'expired'); const nextBookings = pendingBookings.slice(0, 3);
 
+  // ── Cancelar y reprogramar turno (cliente) ─────────
   const handleCancelBooking = async (bookingId) => {
     if (!window.confirm('¿Seguro que querés cancelar este turno?')) return;
     try { await cancelarTurno(bookingId, token); setFeedback({ type: 'success', message: 'Turno cancelado correctamente.' }); cargarDisponibilidad(); refrescarOcupados(); if (currentUser?.role === 'admin') await cargarTurnosAdmin(); else await cargarMisTurnos(); }
@@ -280,6 +293,7 @@ function App() {
     }
   };
 
+  // ── CRUD profesionales (agregar, actualizar, eliminar) ──
   const diviProfesionalNombre = (nombreCompleto) => {
     const partes = String(nombreCompleto).trim().split(/\s+/);
     return { nombre: partes[0] ?? '', apellido: partes.slice(1).join(' ') };
@@ -320,6 +334,7 @@ function App() {
     } catch (error) { if (error.status === 401) expulsarPorSesion(); else setFeedback({ type: 'error', message: error.message || 'Error al cambiar el estado del profesional.' }); return false; }
   };
 
+  // ── CRUD servicios (agregar, actualizar, eliminar) ──
   const handleAddService = async (name, price, durationMinutes) => {
     try {
       await crearServicio({ nombre: name, precio: price, duracion_minutos: durationMinutes }, token);
@@ -343,6 +358,7 @@ function App() {
     } catch (error) { if (error.status === 401) expulsarPorSesion(); else setFeedback({ type: 'error', message: error.message || 'Error al eliminar el servicio.' }); return false; }
   };
 
+  // ── Guardar bloqueos y horarios laborales ──────────
   const handleSaveDateBlockouts = useCallback(async (barberId, fecha, body) => {
     try {
       await guardarBloqueos(barberId, { fecha, ...body }, token);
@@ -365,6 +381,7 @@ function App() {
       return false;
     }
   }, [token, expulsarPorSesion]);
+  // ── CRUD turnos admin (actualizar, eliminar) ───────
   const handleUpdateBooking = async (bookingId, updates) => {
     try {
       setFeedback({ type: 'idle', message: 'Guardando el turno...' });
@@ -400,6 +417,7 @@ function App() {
       else setFeedback({ type: 'error', message: error.message || 'Error al eliminar el turno.' });
     }
   };
+  // ── Navegación entre vistas (cliente, mis turnos) ──
   const handleShowMyBookings = () => { setMainView('my-bookings'); try { history.pushState({ view: 'my-bookings' }, '', '#mis-turnos'); } catch {} };
   const handleBackToClient = () => { setMainView('client'); try { history.pushState({ view: 'client' }, '', window.location.pathname); } catch {} };
 
@@ -412,6 +430,7 @@ function App() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
+  // ── Render de pantallas ────────────────────────────
   if (!isAuthenticated) return (
     <>
       <IniciarSesion authScreen={authScreen} authFeedback={authFeedback} handleGoogleLogin={handleGoogleLogin} handleLoginSubmit={handleLoginSubmit} handleRegisterSubmit={handleRegisterSubmit} loginEmail={loginEmail} loginPassword={loginPassword} onShowLogin={() => setAuthScreen('login')} onShowRegister={() => setAuthScreen('register')} registerForm={registerForm} setLoginEmail={setLoginEmail} setLoginPassword={setLoginPassword} setRegisterForm={setRegisterForm} />

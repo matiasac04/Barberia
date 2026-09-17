@@ -1,5 +1,7 @@
+// ── Agenda cronológica de turnos (filtrable) ─────────
 import { useMemo, useState } from 'react';
 function Agenda({ agendaGroups, barbers, bookingStatusLabels }) {
+  // ── Filtro por profesional ────────────────────────
   const [filterBarber, setFilterBarber] = useState('all');
   const filteredGroups = useMemo(() => {
     if (filterBarber === 'all') return agendaGroups;

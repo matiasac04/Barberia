@@ -1,3 +1,4 @@
+// ── Turnos del cliente (pendientes, expirados, reprogramar) ──
 import { useState } from 'react';
 import Calendario from './Calendario';
 import PieDePagina from '../comunes/PieDePagina';
@@ -5,9 +6,11 @@ import Cabecera from '../comunes/Cabecera';
 import { formatCountdown, getDayFreeSlots, getWeekdayPattern } from '../../utilidades/ayudantes';
 const isClosedDay = (ds) => !getWeekdayPattern(new Date(`${ds}T00:00:00`));
 function MisTurnos({ calendarMax, calendarMin, canCancelBooking, currentUser, dateBlockouts, expiredBookings, horarioLaboral, onBack, onCancelBooking, onReschedule, pendingBookings, takenSlots, timeSlots }) {
+  // ── Estado de reprogramación ──────────────────────
   const [rescheduleFor, setRescheduleFor] = useState('');
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleTime, setRescheduleTime] = useState('');
+  // ── Render de la pantalla ─────────────────────────
   return (
     <main className="simple-page">
       <Cabecera subtitle="Mis turnos" />

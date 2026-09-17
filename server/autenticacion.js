@@ -1,3 +1,4 @@
+// ── Configuración del JWT ─────────────────────────────
 const jwt = require("jsonwebtoken");
 
 if (!process.env.JWT_SECRET) {
@@ -7,6 +8,7 @@ if (!process.env.JWT_SECRET) {
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
+// ── Middleware de autenticación ───────────────────────
 function jwtMiddleware(req, res, next) {
     const authHeader = req.headers.authorization;
 
@@ -26,6 +28,7 @@ function jwtMiddleware(req, res, next) {
     }
 }
 
+// ── Middleware de rol admin ───────────────────────────
 function requireAdmin(req, res, next) {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: "Solo el administrador puede realizar esta acción." });

@@ -1,3 +1,4 @@
+// ── Panel de resumen operativo (estados de turnos) ───
 function Resumen({ bookingStatusOptions, statusCount }) {
   return (
     <article className="simple-card admin-panel">

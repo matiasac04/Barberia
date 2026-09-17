@@ -1,3 +1,4 @@
+// ── Botón flotante de WhatsApp ────────────────────────
 const WHATSAPP_URL = 'https://wa.me/5493412272301'
 function WhatsApp() {
   return (
