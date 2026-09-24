@@ -62,9 +62,9 @@
 .simple-feedback { margin-top: 14px; padding: 13px 14px 13px 46px; border-radius: var(--radius-sm); position: relative; background: var(--card-soft); border: 1px solid var(--line-soft); color: var(--text-mid); line-height: 1.5; }
 .simple-feedback::before { content: 'i'; position: absolute; left: 15px; top: 50%; transform: translateY(-50%); width: 19px; height: 19px; display: grid; place-items: center; border-radius: 999px; font-size: 0.72rem; font-weight: 800; font-family: var(--font-body); background: rgba(255, 255, 255, 0.14); color: var(--text-low); }
 .simple-feedback.success { background: var(--ok-bg); border-color: rgba(127, 214, 162, 0.24); color: #c8f0d8; }
-.simple-feedback.success::before { content: 'âœ“'; background: var(--ok); color: #0a1f14; }
+.simple-feedback.success::before { content: '✓'; background: var(--ok); color: #0a1f14; }
 .simple-feedback.error { background: var(--err-bg); border-color: rgba(241, 153, 155, 0.24); color: #f6c3c5; }
-.simple-feedback.error::before { content: '!'; background: var(--err); color: #2b0d0e; }
+.simple-feedback.error::before { content: '✗'; background: var(--err); color: #2b0d0e; }
 /* ── Turnero del cliente (pasos, chips, resumen) ────── */
 .simple-layout { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 16px; align-items: start; }
 .client-topbar { max-width: 1120px; margin: 0 auto 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
