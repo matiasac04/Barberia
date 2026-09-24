@@ -1,41 +1,113 @@
+// ═══════════════════════════════════════════════════════════════════
+// App.jsx — EL CORAZÓN DE LA APLICACIÓN (estado global + orquestador)
+// ═══════════════════════════════════════════════════════════════════
+// Este archivo es el "cerebro" de toda la SPA de la barbería:
+//   1. Guarda TODO el estado de la app en un solo lugar (estado global):
+//      sesión, profesionales, servicios, turnos, disponibilidad, etc.
+//   2. Hace todas las llamadas a la API (fetch al backend Express).
+//   3. Decide qué pantalla mostrar según quién haya iniciado sesión:
+//      - admin  → Panel de administración (components/admin/Admin.jsx)
+//      - client → Turnero para reservar (components/cliente/Inicio.jsx)
+//                 o "Mis turnos" (components/cliente/MisTurnos.jsx)
+//   4. Pasa los datos y las funciones a los componentes hijos mediante
+//      "props" (prop-drilling: no usa Redux ni Context, todo baja de acá).
+//
+// FLUJO DE DATOS:  App.jsx → src/servicios/api.js (fetch)
+//                → servidor Express (server/) → SQL Server (en la nube)
+//
+// REGLAS DE NEGOCIO CLAVE (definidas acá y en src/utilidades/ayudantes.js):
+//   - Domingos y lunes CERRADOS.
+//   - Solo se reserva desde HOY hasta +30 DÍAS.
+//   - Slots de 30 min según el horario laboral (o horario fijo de respaldo).
+// ═══════════════════════════════════════════════════════════════════
+
 // ── Imports ──────────────────────────────────────────
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import './App.css';
-import Admin from './components/admin/Admin';
-import Inicio from './components/cliente/Inicio';
-import IniciarSesion from './components/ingreso/IniciarSesion';
-import MisTurnos from './components/cliente/MisTurnos';
-import WhatsApp from './components/comunes/WhatsApp';
-import { initialTakenSlots, timeSlots } from './datos/semilla';
+import { useCallback, useEffect, useMemo, useState } from 'react';  // Hooks de React
+import './App.css';  // Estilos globales de la app
+// Componentes de pantalla:
+import Admin from './components/admin/Admin';                 // Panel de administración
+import Inicio from './components/cliente/Inicio';             // Turnero del cliente
+import IniciarSesion from './components/ingreso/IniciarSesion'; // Login y registro
+import MisTurnos from './components/cliente/MisTurnos';       // Historial "Mis turnos"
+import WhatsApp from './components/comunes/WhatsApp';        // Botón flotante de WhatsApp
+// Datos semilla (fallback de arranque, la DB es la fuente real):
+import { timeSlots } from './datos/semilla';
+// Funciones de la API (todas las llamadas al backend, ver src/servicios/api.js):
 import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, verificarToken } from './servicios/api';
-import { canCancelBooking, formatCalendarLabel, getDateBlockedSlots, getWeekdayPattern, getWeeklySlots, isBlockedWeekday, resolveBookingStatus, resolveCalendarDetails, safeClone, toIsoDate } from './utilidades/ayudantes';
+// Utilidades de fechas/slots/estados (ver src/utilidades/ayudantes.js):
+import { canCancelBooking, formatCalendarLabel, getDateBlockedSlots, getWeekdayPattern, getWeeklySlots, isBlockedWeekday, resolveBookingStatus, resolveCalendarDetails, toIsoDate } from './utilidades/ayudantes';
 
 // ── Constantes de calendario ─────────────────────────
+// Ventana de reservas: de HOY (0:00) hasta HOY + 30 días (23:59:59).
+// Tanto el turnero como el calendario mensual se limitan a este rango.
 const today = new Date(), calendarStart = new Date(today), calendarEnd = new Date(today);
 calendarStart.setHours(0, 0, 0, 0); calendarEnd.setDate(calendarEnd.getDate() + 30); calendarEnd.setHours(23, 59, 59, 999);
+// Fecha inicial seleccionada en el turnero = hoy, en formato 'YYYY-MM-DD'
+// (formato ISO sin hora, que es como espera el backend).
 const initialCalendarDate = toIsoDate(calendarStart);
 
 function App() {
   // ── Estado global ────────────────────────────────
+  // -------------------------------------------------------------------
+  // ESTADO DE SESIÓN
+  //   mainView      → qué vista muestra el cliente: 'client' (turnero)
+  //                   o 'my-bookings' (mis turnos)
+  //   token         → el JWT del backend. Al arrancar se lee de localStorage
+  //                   para que la sesión sobreviva al recargar la página.
+  //   currentUser   → el usuario logueado: { role: 'admin'|'client', ... }
+  //   isAuthenticated→ ¿hay token Y usuario? Si no → muestra el login.
+  // -------------------------------------------------------------------
   const [mainView, setMainView] = useState('client');
   const [token, setToken] = useState(() => { try { return localStorage.getItem('token') ?? ''; } catch { return ''; } });
   const [currentUser, setCurrentUser] = useState(() => { try { return JSON.parse(localStorage.getItem('currentUser') ?? 'null'); } catch { return null; } });
   const isAuthenticated = Boolean(token && currentUser);
+
+  // Formulario de ingreso: pantalla activa ('login' | 'register') y sus campos
   const [authScreen, setAuthScreen] = useState('login');
   const [loginEmail, setLoginEmail] = useState(''); const [loginPassword, setLoginPassword] = useState('');
   const [registerForm, setRegisterForm] = useState({ firstName: '', lastName: '', email: '', password: '', whatsapp: '' });
+  // Mensaje que se muestra en la pantalla de ingreso (idle/error/success)
   const [authFeedback, setAuthFeedback] = useState({ type: 'idle', message: 'Primero iniciá sesión para acceder al turnero.' });
+
+  // -------------------------------------------------------------------
+  // CATÁLOGO (viene de la API / SQL Server)
+  //   barbers   → profesionales ACTIVOS (los que puede elegir el cliente)
+  //   allBarbers→ TODOS (activos + inactivos), para el panel de admin
+  //   services  → el catálogo de servicios (corte, barba, etc.)
+  // -------------------------------------------------------------------
   const [barbers, setBarbers] = useState([]);
   const [allBarbers, setAllBarbers] = useState([]);
   const [services, setServices] = useState([]);
+
+  // -------------------------------------------------------------------
+  // SELECCIÓN del turnero (el wizard del cliente)
+  // Guarda lo que el usuario va eligiendo paso a paso: profesional,
+  // servicio, fecha, hora, y sus datos de contacto para confirmar.
+  // -------------------------------------------------------------------
   const [selectedBarber, setSelectedBarber] = useState(null);
   const [selectedService, setSelectedService] = useState(null);
   const [selectedDate, setSelectedDate] = useState(initialCalendarDate);
   const [selectedTime, setSelectedTime] = useState('09:00');
   const [customerName, setCustomerName] = useState(''); const [customerPhone, setCustomerPhone] = useState('');
+
+  // Turnos traídos de la API. Para el cliente son SOLO los suyos,
+  // para el admin son TODOS los del negocio.
   const [confirmedBookings, setConfirmedBookings] = useState([]);
+
+  // feedback: mensaje de éxito/error/idle en el turnero.
+  // submitting: flag que evita el doble envío del formulario.
   const [feedback, setFeedback] = useState({ type: 'idle', message: 'Elegí profesional, día y horario para reservar.' });
   const [submitting, setSubmitting] = useState(false);
+
+  // -------------------------------------------------------------------
+  // DISPONIBILIDAD (lo que está ocupado / bloqueado)
+  //   horariosOcupadosApi → horas ocupadas de la fecha+barbero elegidos
+  //   loadingAvailability → spinner mientras se consulta a la API
+  //   dateBlockouts       → bloqueos puntuales del admin (día o slot)
+  //   horarioLaboral      → horario semanal por profesional (si está en DB)
+  //   bookedRange         → TODOS los turnos ocupados de los próximos 30
+  //                         días, para pintar el calendario mensual
+  // -------------------------------------------------------------------
   const [horariosOcupadosApi, setHorariosOcupadosApi] = useState([]);
   const [loadingAvailability, setLoadingAvailability] = useState(true);
   const [dateBlockouts, setDateBlockouts] = useState([]);
@@ -43,11 +115,16 @@ function App() {
   const [bookedRange, setBookedRange] = useState([]);
 
   // ── Sincronización de selección ───────────────────
+  // Si el barbero o servicio seleccionado ya no existe en la lista
+  // (por ejemplo al recargar datos), se vuelve a seleccionar el primero.
   useEffect(() => { if (barbers.length > 0 && !barbers.some((b) => b.id === selectedBarber)) setSelectedBarber(barbers[0].id); }, [barbers, selectedBarber]);
   useEffect(() => { if (services.length > 0 && !services.some((s) => s.id === selectedService)) setSelectedService(services[0].id); }, [selectedService, services]);
+  // Pre-carga el nombre y teléfono del cliente logueado en el formulario
   useEffect(() => { setCustomerName(currentUser?.name ?? ''); setCustomerPhone(currentUser?.phone ?? ''); }, [currentUser]);
 
   // ── Sesión y autenticación ───────────────────────
+  // Expulsa al usuario: limpia estado + localStorage y vuelve al login.
+  // Se usa cuando el token expira o el backend responde 401 (sesión inválida).
   const expulsarPorSesion = useCallback(() => {
     setToken(''); setCurrentUser(null); setConfirmedBookings([]);
     try { localStorage.removeItem('token'); localStorage.removeItem('currentUser'); history.replaceState(null, '', window.location.pathname); } catch {}
@@ -55,16 +132,23 @@ function App() {
     setAuthFeedback({ type: 'error', message: 'Tu sesión venció. Iniciá sesión de nuevo para continuar.' });
   }, []);
 
+  // Al arrancar (y cada vez que cambia el token) le pregunta al backend
+  // "¿este token sigue siendo válido?" (GET /verificar).
+  // Si no lo es → expulsa. Los usuarios de Google se excluyen porque
+  // su token 'mock-google' no es un JWT real del backend.
   useEffect(() => {
     let cancelado = false;
     if (!token || !currentUser || currentUser.provider === 'google') return;
     verificarToken(token)
       .then(() => { if (cancelado) return; setAuthFeedback({ type: 'success', message: currentUser.role === 'admin' ? 'Bienvenido administrador.' : `Sesión iniciada con ${currentUser.email}.` }); })
       .catch(() => { if (!cancelado) expulsarPorSesion(); });
-    return () => { cancelado = true; };
+    return () => { cancelado = true; };  // evita setState si el componente se desmontó antes
   }, [token, currentUser, expulsarPorSesion]);
 
   // ── Carga de datos desde la API ───────────────────
+  // Trae los profesionales ACTIVOS y los mapea al formato que usan los
+  // componentes: { id, name, email, telefono } (viene como idProfesional,
+  // nombre, etc. desde SQL Server).
   const cargarProfesionales = useCallback(async () => {
     try {
       const p = await obtenerProfesionales();
@@ -72,6 +156,8 @@ function App() {
     } catch {}
   }, []);
 
+  // Igual pero trae TODOS los profesionales (activos e inactivos) con su
+  // flag `activo`. Lo usa el panel de admin para poder reactivar bajas.
   const cargarTodosProfesionales = useCallback(async () => {
     try {
       const p = await obtenerProfesionales(true);
@@ -79,6 +165,7 @@ function App() {
     } catch {}
   }, []);
 
+  // Trae el catálogo de servicios y lo mapea a { id, name, price, durationMinutes }.
   const cargarServicios = useCallback(async () => {
     try {
       const s = await obtenerServicios();
@@ -87,6 +174,11 @@ function App() {
   }, []);
 
   // ── Carga inicial de datos (Profesionales/Servicios/Bloqueos/Horarios) ──
+  // Primer render: lanza 6 llamadas a la API EN PARALELO (Promise.all):
+  //   1. profesionales activos    4. bloqueos del admin
+  //   2. todos los profesionales  5. horarios laborales
+  //   3. servicios                6. turnos ocupados de los próximos 30 días
+  // `cancelado` evita pisar el estado si el componente se desmonta antes.
   useEffect(() => {
     let cancelado = false;
     Promise.all([obtenerProfesionales(), obtenerProfesionales(true), obtenerServicios(), obtenerBloqueos(), obtenerHorarios(), obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd))])
@@ -95,12 +187,17 @@ function App() {
     return () => { cancelado = true; };
   }, []);
 
+  // Vuelve a pedir todos los turnos ocupados del mes entero. Se usa después
+  // de reservar/cancelar/reprogramar para refrescar el calendario mensual.
   const refrescarOcupados = useCallback(() => {
     obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd))
       .then((o) => { if (Array.isArray(o)) setBookedRange(o); })
       .catch(() => {});
   }, []);
 
+  // SQL Server devuelve las horas como '10:30:00' (o '...T10:30:00Z').
+  // Esta función las deja en 'HH:MM' (ej. '10:30') para poder compararlas
+  // con los slots que maneja el frontend.
   const normalizarHoraApi = useCallback((valor) => {
     if (!valor) return '';
     const s = String(valor).trim();
@@ -109,16 +206,24 @@ function App() {
     return p[1] ? `${p[0].padStart(2, '0')}:${p[1].padStart(2, '0')}` : '';
   }, []);
 
+  // Consulta a la API qué horas ya están ocupadas para la fecha + barbero
+  // elegidos y guarda SOLO la hora de inicio de cada turno (ej. '10:30').
+  // Se re-ejecuta automáticamente (gracias al useEffect de abajo) cada
+  // vez que cambia el día seleccionado o el profesional.
   const cargarDisponibilidad = useCallback(() => {
-    if (!selectedDate || !selectedBarber) return;
-    setLoadingAvailability(true);
+    if (!selectedDate || !selectedBarber) return;  // falta elegir algo
+    setLoadingAvailability(true);  // prende el spinner
     obtenerTurnosDisponibles(selectedDate, selectedBarber)
       .then((r) => setHorariosOcupadosApi((r?.turnosOcupados ?? []).map((t) => normalizarHoraApi(t.horaInicio)).filter(Boolean)))
       .catch(() => setHorariosOcupadosApi([]))
-      .finally(() => setLoadingAvailability(false));
+      .finally(() => setLoadingAvailability(false));  // siempre apaga el spinner
   }, [selectedDate, selectedBarber, normalizarHoraApi]);
   useEffect(() => { cargarDisponibilidad(); }, [cargarDisponibilidad]);
 
+  // Trae los turnos del CLIENTE logueado y los convierte a un formato único
+  // para la UI. `resolveBookingStatus` calcula en qué estado está cada turno
+  // (pendiente / vencido / completado / cancelado / no-show) según su fecha,
+  // hora y el momento actual.
   const cargarMisTurnos = useCallback(async () => {
     if (!currentUser?.idCliente || !token) return;
     try {
@@ -133,6 +238,9 @@ function App() {
     } catch (error) { if (error?.status === 401) expulsarPorSesion(); }
   }, [currentUser, token, expulsarPorSesion, normalizarHoraApi]);
   useEffect(() => { if (isAuthenticated && currentUser?.role !== 'admin') cargarMisTurnos(); }, [isAuthenticated, cargarMisTurnos, currentUser?.role]);
+  // Auto-refresco para el cliente: vuelve a cargar "Mis turnos" cada 20
+  // segundos y al volver a la pestaña (visibilitychange). Así el estado de
+  // un turno se actualiza solo (ej. de 'pendiente' a 'completado').
   useEffect(() => {
     if (!isAuthenticated || currentUser?.role === 'admin') return;
     const onVisible = () => { if (document.visibilityState === 'visible') cargarMisTurnos(); };
@@ -141,6 +249,8 @@ function App() {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
   }, [isAuthenticated, currentUser?.role, cargarMisTurnos]);
 
+  // Igual que cargarMisTurnos pero para el ADMIN: trae TODOS los turnos del
+  // negocio con sus JOINs (nombre del cliente, del barbero y del servicio).
   const cargarTurnosAdmin = useCallback(async () => {
     if (!token) return;
     try {
@@ -157,9 +267,12 @@ function App() {
   useEffect(() => { if (isAuthenticated && currentUser?.role === 'admin') cargarTurnosAdmin(); }, [isAuthenticated, cargarTurnosAdmin, currentUser?.role]);
 
   // ── Disponibilidad del día (slots libres/ocupados) ──
+  // Construye el "mapa de ocupación": { [idBarbero]: { 'YYYY-MM-DD': ['10:30', ...] } }
+  // combinando el rango del calendario mensual (bookedRange) con los turnos
+  // ya cargados (confirmedBookings). `meter()` agrega una hora al mapa.
   const takenSlots = useMemo(() => {
-    const snap = safeClone(initialTakenSlots);
-    const meter = (barberId, dayKey, time) => {
+    const snap = {};  // el mapa arranca vacío; lo llenan los turnos de abajo
+    const meter = (barberId, dayKey, time) => {  // marca una hora como ocupada
       if (barberId == null || dayKey == null || !time) return;
       const bs = snap[barberId] ?? (snap[barberId] = {});
       bs[dayKey] = [...(bs[dayKey] ?? []), time];
@@ -172,22 +285,34 @@ function App() {
     confirmedBookings.forEach((b) => meter(b.barberId, toIsoDate(b.bookingDate), b.time));
     return snap;
   }, [bookedRange, confirmedBookings, normalizarHoraApi]);
+
+  // ── Datos derivados del día seleccionado ──────────
   const currentBarber = barbers.find((b) => b.id === selectedBarber) ?? barbers[0] ?? null;
   const currentService = services.find((s) => s.id === selectedService) ?? services[0] ?? null;
   const selectedDateObject = new Date(`${selectedDate}T00:00:00`);
-  const selectedWeekdayPattern = getWeekdayPattern(selectedDateObject);
-  const selectedDateLabel = formatCalendarLabel(selectedDateObject);
+  const selectedWeekdayPattern = getWeekdayPattern(selectedDateObject);  // 'weekday' | 'saturday' | null
+  const selectedDateLabel = formatCalendarLabel(selectedDateObject);     // { label, date }
   const currentDay = { id: selectedWeekdayPattern ?? 'sun', label: selectedDateLabel.label, date: selectedDateLabel.date };
+  // Slots posibles del día: usa el horario laboral si existe en la DB,
+  // si no, cae en el horario fijo de respaldo (timeSlots de semilla.js)
   const daySlots = selectedWeekdayPattern ? getWeeklySlots(horarioLaboral, selectedBarber, selectedWeekdayPattern, timeSlots) : [];
+  // Lo bloqueado = turnos ya tomados + bloqueos puntuales que cargó el admin
   const horariosBloqueadosLocales = selectedWeekdayPattern ? [...(takenSlots[selectedBarber]?.[selectedDate] ?? []), ...getDateBlockedSlots(dateBlockouts, selectedBarber, selectedDate, daySlots)] : daySlots;
-  const unavailableSlots = [...new Set([...horariosBloqueadosLocales, ...horariosOcupadosApi])];
+  const unavailableSlots = [...new Set([...horariosBloqueadosLocales, ...horariosOcupadosApi])];  // sin duplicados
+  // DISPONIBLES = todos los slots del día − los no disponibles
   const availableSlots = daySlots.filter((s) => !unavailableSlots.includes(s));
+  // Auto-ajuste de la hora elegida: si no quedan slots la limpia; si el
+  // slot elegido dejó de estar disponible, elige el primero libre.
   useEffect(() => { if (availableSlots.length === 0) { setSelectedTime(''); return; } if (!availableSlots.includes(selectedTime)) setSelectedTime(availableSlots[0]); }, [availableSlots, selectedTime]);
   const selectedTimeIsTaken = selectedTime ? unavailableSlots.includes(selectedTime) : true;
-  const isSundayOrMonday = isBlockedWeekday(selectedDateObject.getDay());
-  const isOutOfRange = selectedDateObject < calendarStart || selectedDateObject > calendarEnd;
+  // Reglas de negocio aplicadas al día seleccionado:
+  const isSundayOrMonday = isBlockedWeekday(selectedDateObject.getDay());  // ¿cerrado ese día?
+  const isOutOfRange = selectedDateObject < calendarStart || selectedDateObject > calendarEnd;  // ¿fuera de hoy +30?
 
   // ── Selección de fecha (validaciones) ──────────────
+  // Se ejecuta al tocar un día del calendario. Valida: fecha válida,
+  // dentro del rango [hoy, +30 días] y que no sea domingo/lunes.
+  // Si algo falla, muestra el error y NO cambia la fecha seleccionada.
   const handleCalendarChange = (nextDate) => {
     const nextDateObject = new Date(`${nextDate}T00:00:00`);
     if (Number.isNaN(nextDateObject.getTime())) return;
@@ -197,6 +322,7 @@ function App() {
   };
 
   // ── Handlers de sesión (logout, login, registro, Google) ──
+  // Logout: limpia estado + localStorage y vuelve a la pantalla de login.
   const handleLogout = () => {
     setToken(''); setCurrentUser(null); setConfirmedBookings([]);
     try { localStorage.removeItem('token'); localStorage.removeItem('currentUser'); history.replaceState(null, '', window.location.pathname); } catch {}
@@ -205,6 +331,11 @@ function App() {
     setAuthFeedback({ type: 'idle', message: 'Primero iniciá sesión para acceder al turnero.' });
   };
 
+  // Login: manda usuario/mail + contraseña a POST /login. Según el `role`
+  // que devuelva el backend arma un currentUser distinto:
+  //   - admin  → { role: 'admin', ... } → vista de administración
+  //   - client → { role: 'client', ... } → turnero
+  // En ambos casos guarda token + usuario en localStorage.
   const handleLoginSubmit = async (event) => {
     event.preventDefault();
     const cred = loginEmail.trim(), pass = loginPassword.trim();
@@ -226,6 +357,9 @@ function App() {
     } catch (error) { setAuthFeedback({ type: 'error', message: error.message || 'Credenciales incorrectas.' }); }
   };
 
+  // ⚠️ "Continuar con Google" es SOLO un mock de prueba: crea un usuario
+  // falso (sin idCliente en la DB) con un token inválido 'mock-google'.
+  // Ese usuario NO puede reservar turnos (ver handleSubmit, valida idCliente).
   const handleGoogleLogin = () => {
     const mock = { idCliente: null, name: 'Cliente Prueba', email: 'cliente.prueba@gmail.com', role: 'client', phone: '', provider: 'google' };
     const t = 'mock-google';
@@ -234,6 +368,8 @@ function App() {
     setAuthFeedback({ type: 'success', message: 'Sesión iniciada con Google (modo prueba).' });
   };
 
+  // Registro: crea la cuenta en la DB (POST /registro), vuelve a la pantalla
+  // de login y pre-carga el mail para que el usuario solo escriba la clave.
   const handleRegisterSubmit = async (event) => {
     event.preventDefault(); const { firstName, lastName, email, password, whatsapp } = registerForm;
     if (!firstName.trim() || !lastName.trim() || !email.trim() || !password.trim() || !whatsapp.trim()) { setAuthFeedback({ type: 'error', message: 'Completá nombre, apellido, mail, contraseña y whatsapp para registrarte.' }); return; }
@@ -246,6 +382,9 @@ function App() {
   };
 
   // ── Reserva de turno ───────────────────────────────
+  // Es el paso final del turnero. Re-valida todo por las dudas
+  // (nombre+teléfono, cuenta vinculada a la DB, día habilitado, hora libre),
+  // llama a POST /turnos y después refresca la disponibilidad y los turnos.
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!customerName.trim() || !customerPhone.trim()) { setFeedback({ type: 'error', message: 'Completá tu nombre y teléfono para confirmar el turno.' }); return; }
@@ -253,31 +392,39 @@ function App() {
     if (isSundayOrMonday) { setFeedback({ type: 'error', message: 'No se pueden pedir turnos los domingos ni los lunes. Elegí de martes a sábado.' }); return; }
     if (isOutOfRange) { setFeedback({ type: 'error', message: 'Solo se pueden pedir turnos desde hoy hasta dentro de un mes.' }); return; }
     if (!selectedTime || selectedTimeIsTaken) { setFeedback({ type: 'error', message: 'Elegí un horario disponible antes de confirmar.' }); return; }
-    if (submitting) return;
+    if (submitting) return;  // evita el doble envío con el botón
     try {
       setSubmitting(true);
       setFeedback({ type: 'idle', message: 'Confirmando tu turno...' });
       await reservarTurno({ idCliente: currentUser.idCliente, idProfesional: selectedBarber, idServicio: selectedService, fecha: selectedDate, horaInicio: selectedTime, telefono: customerPhone.trim() }, token);
       setFeedback({ type: 'success', message: `Turno confirmado para ${customerName.trim()} con ${currentBarber.name} (${currentService.name}, $${currentService.price.toLocaleString('es-AR')}) el ${selectedDateLabel.label} ${selectedDateLabel.date} a las ${selectedTime}.` });
       setCustomerName(currentUser?.name ?? ''); setCustomerPhone(currentUser?.phone ?? ''); setSelectedTime('');
+      // Refresca todo lo afectado por la nueva reserva:
       cargarDisponibilidad(); refrescarOcupados(); if (currentUser?.role === 'admin') await cargarTurnosAdmin(); else await cargarMisTurnos();
     } catch (error) { setFeedback({ type: 'error', message: error.message || 'Error al reservar el turno.' }); }
-    finally { setSubmitting(false); }
+    finally { setSubmitting(false); }  // siempre desbloquea el botón
   };
 
   // ── Datos derivados para vista del cliente ─────────
-  const occupancyCount = daySlots.length - availableSlots.length; const currentUserEmail = currentUser?.email ?? '';
+  const occupancyCount = daySlots.length - availableSlots.length;  // cuántos slots del día están ocupados
+  const currentUserEmail = currentUser?.email ?? '';
+  // Turnos del cliente logueado = los confirmadoBookings que son SUYOS
   const currentUserBookings = confirmedBookings.filter((b) => b.ownerEmail === currentUserEmail);
+  // pending = próximos / expired = pasados (según resolveBookingStatus)
   const pendingBookings = currentUserBookings.filter((b) => b.status === 'pending');
-  const expiredBookings = currentUserBookings.filter((b) => b.status === 'expired'); const nextBookings = pendingBookings.slice(0, 3);
+  const expiredBookings = currentUserBookings.filter((b) => b.status === 'expired'); const nextBookings = pendingBookings.slice(0, 3);  // los 3 próximos para el banner
 
   // ── Cancelar y reprogramar turno (cliente) ─────────
+  // Cancela el turno en la DB (estado → 'Cancelado') previa confirmación.
+  // La regla de las >24 h de antelación la valida canCancelBooking.js.
   const handleCancelBooking = async (bookingId) => {
     if (!window.confirm('¿Seguro que querés cancelar este turno?')) return;
     try { await cancelarTurno(bookingId, token); setFeedback({ type: 'success', message: 'Turno cancelado correctamente.' }); cargarDisponibilidad(); refrescarOcupados(); if (currentUser?.role === 'admin') await cargarTurnosAdmin(); else await cargarMisTurnos(); }
     catch (error) { if (error.status === 401) expulsarPorSesion(); else setFeedback({ type: 'error', message: error.message || 'Error al cancelar el turno.' }); }
   };
 
+  // Reprograma: cambia fecha y/o hora con un PATCH a la API y actualiza en
+  // local el turno con sus datos de calendario recalculados.
   const handleRescheduleBooking = async (bookingId, bookingDate, time) => {
     if (!window.confirm('¿Confirmás el nuevo día y horario?')) return;
     try {
@@ -294,10 +441,14 @@ function App() {
   };
 
   // ── CRUD profesionales (agregar, actualizar, eliminar) ──
+  // Divide 'Juan Pérez' → { nombre: 'Juan', apellido: 'Pérez' }
+  // porque en la DB el nombre y el apellido son campos separados.
   const diviProfesionalNombre = (nombreCompleto) => {
     const partes = String(nombreCompleto).trim().split(/\s+/);
     return { nombre: partes[0] ?? '', apellido: partes.slice(1).join(' ') };
   };
+  // Alta: crea el profesional, recarga las 2 listas y devuelve { ok }
+  // para que el modal se cierre automáticamente si salió bien.
   const handleAddBarber = async (nombreCompleto, email, telefono) => {
     const { nombre, apellido } = diviProfesionalNombre(nombreCompleto);
     try {
@@ -307,6 +458,7 @@ function App() {
       return { ok: true };
     } catch (error) { if (error.status === 401) expulsarPorSesion(); return { ok: false, error: error.message || 'Error al agregar el profesional.' }; }
   };
+  // Edita un profesional (misma lógica que el alta).
   const handleUpdateBarber = async (id, nombreCompleto, email, telefono) => {
     const { nombre, apellido } = diviProfesionalNombre(nombreCompleto);
     try {
@@ -316,6 +468,8 @@ function App() {
       return { ok: true };
     } catch (error) { if (error.status === 401) expulsarPorSesion(); return { ok: false, error: error.message || 'Error al actualizar el profesional.' }; }
   };
+  // Baja lógica (activo → 0): los turnos pasados se mantienen, pero ya no
+  // recibe reservas nuevas.
   const handleDeleteBarber = async (id) => {
     if (!window.confirm('¿Eliminar a este profesional? Sus turnos se mantienen, pero ya no recibirá reservas nuevas.')) return { ok: false };
     try {
@@ -325,6 +479,7 @@ function App() {
       return { ok: true };
     } catch (error) { if (error.status === 401) expulsarPorSesion(); return { ok: false, error: error.message || 'Error al eliminar el profesional.' }; }
   };
+  // Activar / desactivar (toggle del checkbox en el panel de admin).
   const handleToggleBarberActivo = async (id, activo) => {
     try {
       await actualizarProfesional(id, { activo: !activo }, token);
@@ -335,6 +490,7 @@ function App() {
   };
 
   // ── CRUD servicios (agregar, actualizar, eliminar) ──
+  // Los tres devuelven true/false para que el modal cierre o muestre error.
   const handleAddService = async (name, price, durationMinutes) => {
     try {
       await crearServicio({ nombre: name, precio: price, duracion_minutos: durationMinutes }, token);
@@ -349,6 +505,8 @@ function App() {
       return true;
     } catch (error) { if (error.status === 401) expulsarPorSesion(); else setFeedback({ type: 'error', message: error.message || 'Error al actualizar el servicio.' }); return false; }
   };
+  // Borrado físico. Si el servicio tiene turnos asociados, el backend
+  // responde error 547 (FK de SQL Server) y acá se muestra el aviso.
   const handleDeleteService = async (id) => {
     if (!window.confirm('¿Eliminar este servicio del catálogo?')) return false;
     try {
@@ -359,6 +517,8 @@ function App() {
   };
 
   // ── Guardar bloqueos y horarios laborales ──────────
+  // Guarda los bloqueos del admin y RECARGA la lista desde la API para que
+  // el calendario del cliente refleje el cambio al instante.
   const handleSaveDateBlockouts = useCallback(async (barberId, fecha, body) => {
     try {
       await guardarBloqueos(barberId, { fecha, ...body }, token);
@@ -370,6 +530,8 @@ function App() {
       return false;
     }
   }, [token, expulsarPorSesion]);
+  // Igual que el anterior pero para el horario SEMANAL del profesional
+  // (hasta 2 bloques por día). También recarga para reflejar el cambio.
   const handleSaveHorarios = useCallback(async (barberId, horarios) => {
     try {
       await guardarHorarios(barberId, horarios, token);
@@ -382,6 +544,10 @@ function App() {
     }
   }, [token, expulsarPorSesion]);
   // ── CRUD turnos admin (actualizar, eliminar) ───────
+  // Edición completa del turno: profesional, servicio, fecha, hora, estado
+  // y datos del cliente. Solo envía los campos que vienen definidos.
+  // Después actualiza la lista local con los nombres nuevos de barbero/
+  // servicio y recarga todo por API para quedar sincronizado.
   const handleUpdateBooking = async (bookingId, updates) => {
     try {
       setFeedback({ type: 'idle', message: 'Guardando el turno...' });
@@ -404,6 +570,7 @@ function App() {
       return false;
     }
   };
+  // Borrado definitivo del turno (delete físico en la DB, con confirmación).
   const handleDeleteBooking = async (bookingId) => {
     if (!window.confirm('¿Eliminar este turno definitivamente?')) return;
     try {
@@ -418,9 +585,13 @@ function App() {
     }
   };
   // ── Navegación entre vistas (cliente, mis turnos) ──
+  // Cambia la vista del cliente usando el hash de la URL (#mis-turnos).
+  // history.pushState permite que el botón atrás del navegador funcione.
   const handleShowMyBookings = () => { setMainView('my-bookings'); try { history.pushState({ view: 'my-bookings' }, '', '#mis-turnos'); } catch {} };
   const handleBackToClient = () => { setMainView('client'); try { history.pushState({ view: 'client' }, '', window.location.pathname); } catch {} };
 
+  // Escucha el evento 'popstate' (botón atrás/adelante del navegador) y
+  // sincroniza la vista con el hash actual de la URL.
   useEffect(() => {
     const onPop = () => {
       const isMyBookings = window.location.hash === '#mis-turnos';
@@ -431,12 +602,19 @@ function App() {
   }, []);
 
   // ── Render de pantallas ────────────────────────────
+  // 1) SIN SESIÓN  → IniciarSesion (login/registro) + botón WhatsApp.
+  // 2) CLIENTE (y aún cargando datos) → pantalla "Cargando datos...".
+  // 3) ADMIN       → Admin.jsx con todos los handlers del panel.
+  // 4) CLIENTE     → 'my-bookings' → MisTurnos (historial y cancelación)
+  //                  → 'client'     → Inicio (el turnero de 5 pasos)
   if (!isAuthenticated) return (
     <>
       <IniciarSesion authScreen={authScreen} authFeedback={authFeedback} handleGoogleLogin={handleGoogleLogin} handleLoginSubmit={handleLoginSubmit} handleRegisterSubmit={handleRegisterSubmit} loginEmail={loginEmail} loginPassword={loginPassword} onShowLogin={() => setAuthScreen('login')} onShowRegister={() => setAuthScreen('register')} registerForm={registerForm} setLoginEmail={setLoginEmail} setLoginPassword={setLoginPassword} setRegisterForm={setRegisterForm} />
       <WhatsApp />
     </>
   );
+  // Mientras no lleguen los profesionales y servicios, mostramos un loading
+  // (así el turnero no aparece vacío/roto en el primer render).
   if (currentUser?.role !== 'admin' && (barbers.length === 0 || services.length === 0)) return (
     <main className="simple-page" style={{ display: 'grid', placeItems: 'center', minHeight: '100svh' }}>
       <p style={{ color: 'var(--text-mid)' }}>Cargando datos...</p>
