@@ -51,20 +51,22 @@ export const obtenerTurnosCliente = (idCliente, token) => peticion(`/clientes/${
 // obtenerTurnos: TODOS los turnos, solo para admin (para el panel de agenda).
 export const obtenerTurnos = (token) => peticion("/turnos", { token });
 // obtenerTurnosDisponibles: horarios ya reservados de un profesional en una fecha.
-export const obtenerTurnosDisponibles = (fecha, idProfesional) => peticion(`/turnos/disponibles?fecha=${fecha}&idProfesional=${idProfesional}`);
+export const obtenerTurnosDisponibles = (fecha, idProfesional, token) => peticion(`/turnos/disponibles?fecha=${fecha}&idProfesional=${idProfesional}`, { token });
 // obtenerTurnosOcupados: todos los turnos ocupados en un rango de fechas
 // (se usa para contar cuántos quedan libres por día en el inicio).
-export const obtenerTurnosOcupados = (inicio, fin) => peticion(`/turnos/ocupados?inicio=${inicio}&fin=${fin}`);
+export const obtenerTurnosOcupados = (inicio, fin, token) => peticion(`/turnos/ocupados?inicio=${inicio}&fin=${fin}`, { token });
 export const reservarTurno = (datos, token) => peticion("/turnos", { method: "POST", token, body: datos });
 export const cancelarTurno = (idTurno, token) => peticion(`/turnos/${idTurno}/cancelar`, { method: "PATCH", token });
 export const actualizarTurno = (idTurno, datos, token) => peticion(`/turnos/${idTurno}`, { method: "PATCH", token, body: datos });
 export const eliminarTurno = (idTurno, token) => peticion(`/turnos/${idTurno}`, { method: "DELETE", token });
 
 // ── Bloqueos y horarios laborales ─────────────────────
+// Estos dos endpoints exigen token (exponen la agenda interna del negocio),
+// así que hay que pasárselo como en el resto de las llamadas.
 // obtenerBloqueos: días/horas que el admin marcó como no disponibles.
-export const obtenerBloqueos = () => peticion("/bloqueos");
+export const obtenerBloqueos = (token) => peticion("/bloqueos", { token });
 // obtenerHorarios: horario laboral de cada profesional (tabla HorarioLaboral).
-export const obtenerHorarios = () => peticion("/horarios");
+export const obtenerHorarios = (token) => peticion("/horarios", { token });
 // guardarBloqueos: guarda los bloqueos de un profesional para una fecha.
 export const guardarBloqueos = (id, body, token) => peticion(`/profesionales/${id}/bloqueos`, { method: "POST", token, body });
 // guardarHorarios: reemplaza el horario semanal de un profesional.

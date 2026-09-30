@@ -113,6 +113,9 @@ function App() {
   const [dateBlockouts, setDateBlockouts] = useState([]);
   const [horarioLaboral, setHorarioLaboral] = useState([]);
   const [bookedRange, setBookedRange] = useState([]);
+  // Qué pedido de la carga inicial falló, para no quedar en "Cargando datos..."
+  // para siempre sin explicar por qué. Vacío = todo cargó bien.
+  const [errorCarga, setErrorCarga] = useState('');
 
   // ── Sincronización de selección ───────────────────
   // Si el barbero o servicio seleccionado ya no existe en la lista
@@ -153,7 +156,7 @@ function App() {
     try {
       const p = await obtenerProfesionales();
       if (Array.isArray(p) && p.length > 0) setBarbers(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '' })));
-    } catch {}
+    } catch (error) { console.warn('No se pudieron obtener los profesionales:', error); }
   }, []);
 
   // Igual pero trae TODOS los profesionales (activos e inactivos) con su
@@ -162,7 +165,7 @@ function App() {
     try {
       const p = await obtenerProfesionales(true);
       if (Array.isArray(p)) setAllBarbers(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '', activo: x.activo !== false })));
-    } catch {}
+    } catch (error) { console.warn('No se pudieron obtener todos los profesionales:', error); }
   }, []);
 
   // Trae el catálogo de servicios y lo mapea a { id, name, price, durationMinutes }.
@@ -170,30 +173,63 @@ function App() {
     try {
       const s = await obtenerServicios();
       if (Array.isArray(s) && s.length > 0) setServices(s.map((x) => ({ id: x.idServicio, name: x.nombre, price: x.precio, durationMinutes: x.duracion_minutos })));
-    } catch {}
+    } catch (error) { console.warn('No se pudieron obtener los servicios:', error); }
   }, []);
 
   // ── Carga inicial de datos (Profesionales/Servicios/Bloqueos/Horarios) ──
-  // Primer render: lanza 6 llamadas a la API EN PARALELO (Promise.all):
+  // Primer render CON SESIÓN: lanza 6 llamadas a la API EN PARALELO (Promise.allSettled):
   //   1. profesionales activos    4. bloqueos del admin
   //   2. todos los profesionales  5. horarios laborales
   //   3. servicios                6. turnos ocupados de los próximos 30 días
+  // Se usa allSettled y NO all porque antes el fallo de UNA sola request
+  // (por ejemplo /bloqueos) rechazaba el Promise entero y dejaba profesionales
+  // y servicios sin cargar, sin mostrar ningún error. Ahora cada request se
+  // aplica por separado: las que funcionan cargan igual, y las que fallan se
+  // anotan en la consola + en errorCarga (que se muestra en pantalla).
   // `cancelado` evita pisar el estado si el componente se desmonta antes.
+  //
+  // OJO: depende de `token` a propósito. /horarios, /bloqueos, /turnos/ocupados y
+  // /turnos/disponibles exigen token, así que sin sesión esta tanda fallaría
+  // entera. Con el token en las dependencias, los 6 requests se re-disparan
+  // cuando el usuario se loguea y la agenda carga recién, con datos de verdad.
   useEffect(() => {
+    if (!token) return;
     let cancelado = false;
-    Promise.all([obtenerProfesionales(), obtenerProfesionales(true), obtenerServicios(), obtenerBloqueos(), obtenerHorarios(), obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd))])
-      .then(([p, pa, s, b, h, o]) => { if (cancelado) return; if (Array.isArray(p) && p.length > 0) setBarbers(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '' }))); if (Array.isArray(pa)) setAllBarbers(pa.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '', activo: x.activo !== false }))); if (Array.isArray(s) && s.length > 0) setServices(s.map((x) => ({ id: x.idServicio, name: x.nombre, price: x.precio, durationMinutes: x.duracion_minutos }))); if (Array.isArray(b)) setDateBlockouts(b); if (Array.isArray(h)) setHorarioLaboral(h); if (Array.isArray(o)) setBookedRange(o); })
-      .catch(() => {});
+    // valor(): si la request se rechazó devuelve null (y avisa por consola),
+    // si salió bien devuelve la respuesta para seguir mapeándola normal.
+    const valor = (resultado, etiqueta) => {
+      if (resultado.status === 'rejected') { console.warn(`[carga inicial] Falló ${etiqueta}:`, resultado.reason); return null; }
+      return resultado.value;
+    };
+    Promise.allSettled([obtenerProfesionales(), obtenerProfesionales(true), obtenerServicios(), obtenerBloqueos(token), obtenerHorarios(token), obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd), token)])
+      .then(([rp, rpa, rs, rb, rh, ro]) => {
+        if (cancelado) return;
+        const fallidas = [];
+        const p = valor(rp, 'profesionales') ?? (fallidas.push('profesionales'), null);
+        const pa = valor(rpa, 'todos los profesionales') ?? (fallidas.push('todos los profesionales'), null);
+        const s = valor(rs, 'servicios') ?? (fallidas.push('servicios'), null);
+        const b = valor(rb, 'bloqueos') ?? (fallidas.push('bloqueos'), null);
+        const h = valor(rh, 'horarios') ?? (fallidas.push('horarios'), null);
+        const o = valor(ro, 'turnos ocupados') ?? (fallidas.push('turnos ocupados'), null);
+        if (Array.isArray(p) && p.length > 0) setBarbers(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '' })));
+        if (Array.isArray(pa)) setAllBarbers(pa.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '', activo: x.activo !== false })));
+        if (Array.isArray(s) && s.length > 0) setServices(s.map((x) => ({ id: x.idServicio, name: x.nombre, price: x.precio, durationMinutes: x.duracion_minutos })));
+        if (Array.isArray(b)) setDateBlockouts(b);
+        if (Array.isArray(h)) setHorarioLaboral(h);
+        if (Array.isArray(o)) setBookedRange(o);
+        setErrorCarga(fallidas.length ? `No se pudo cargar: ${fallidas.join(', ')}. Revisá que el backend esté corriendo.` : '');
+      });
     return () => { cancelado = true; };
-  }, []);
+  }, [token]);
 
   // Vuelve a pedir todos los turnos ocupados del mes entero. Se usa después
   // de reservar/cancelar/reprogramar para refrescar el calendario mensual.
   const refrescarOcupados = useCallback(() => {
-    obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd))
+    if (!token) return;
+    obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd), token)
       .then((o) => { if (Array.isArray(o)) setBookedRange(o); })
       .catch(() => {});
-  }, []);
+  }, [token]);
 
   // SQL Server devuelve las horas como '10:30:00' (o '...T10:30:00Z').
   // Esta función las deja en 'HH:MM' (ej. '10:30') para poder compararlas
@@ -211,13 +247,13 @@ function App() {
   // Se re-ejecuta automáticamente (gracias al useEffect de abajo) cada
   // vez que cambia el día seleccionado o el profesional.
   const cargarDisponibilidad = useCallback(() => {
-    if (!selectedDate || !selectedBarber) return;  // falta elegir algo
+    if (!token || !selectedDate || !selectedBarber) return;  // falta sesión o falta elegir algo
     setLoadingAvailability(true);  // prende el spinner
-    obtenerTurnosDisponibles(selectedDate, selectedBarber)
+    obtenerTurnosDisponibles(selectedDate, selectedBarber, token)
       .then((r) => setHorariosOcupadosApi((r?.turnosOcupados ?? []).map((t) => normalizarHoraApi(t.horaInicio)).filter(Boolean)))
       .catch(() => setHorariosOcupadosApi([]))
       .finally(() => setLoadingAvailability(false));  // siempre apaga el spinner
-  }, [selectedDate, selectedBarber, normalizarHoraApi]);
+  }, [token, selectedDate, selectedBarber, normalizarHoraApi]);
   useEffect(() => { cargarDisponibilidad(); }, [cargarDisponibilidad]);
 
   // Trae los turnos del CLIENTE logueado y los convierte a un formato único
@@ -522,7 +558,7 @@ function App() {
   const handleSaveDateBlockouts = useCallback(async (barberId, fecha, body) => {
     try {
       await guardarBloqueos(barberId, { fecha, ...body }, token);
-      const b = await obtenerBloqueos();
+      const b = await obtenerBloqueos(token);
       if (Array.isArray(b)) setDateBlockouts(b);
       return true;
     } catch (error) {
@@ -535,7 +571,7 @@ function App() {
   const handleSaveHorarios = useCallback(async (barberId, horarios) => {
     try {
       await guardarHorarios(barberId, horarios, token);
-      const h = await obtenerHorarios();
+      const h = await obtenerHorarios(token);
       if (Array.isArray(h)) setHorarioLaboral(h);
       return true;
     } catch (error) {
@@ -614,16 +650,17 @@ function App() {
     </>
   );
   // Mientras no lleguen los profesionales y servicios, mostramos un loading
-  // (así el turnero no aparece vacío/roto en el primer render).
+  // (así el turnero no aparece vacío/roto en el primer render). Si alguna
+  // request falló, mostramos cuál fue en vez de quedarnos girando en silencio.
   if (currentUser?.role !== 'admin' && (barbers.length === 0 || services.length === 0)) return (
     <main className="simple-page" style={{ display: 'grid', placeItems: 'center', minHeight: '100svh' }}>
-      <p style={{ color: 'var(--text-mid)' }}>Cargando datos...</p>
+      <p style={{ color: errorCarga ? 'var(--danger, #e05a4f)' : 'var(--text-mid)' }}>{errorCarga || 'Cargando datos...'}</p>
     </main>
   );
   return (
     <>
       {currentUser?.role === 'admin' ? (
-        <Admin allBarbers={allBarbers} barbers={barbers} bookings={confirmedBookings} currentUser={currentUser} dateBlockouts={dateBlockouts} horarioLaboral={horarioLaboral} onAddBarber={handleAddBarber} onAddService={handleAddService} onDeleteBarber={handleDeleteBarber} onDeleteBooking={handleDeleteBooking} onDeleteService={handleDeleteService} onLogout={handleLogout} onSaveDateBlockouts={handleSaveDateBlockouts} onSaveHorarios={handleSaveHorarios} onToggleBarberActivo={handleToggleBarberActivo} onUpdateBarber={handleUpdateBarber} onUpdateBooking={handleUpdateBooking} onUpdateService={handleUpdateService} services={services} timeSlots={timeSlots} />
+        <Admin allBarbers={allBarbers} barbers={barbers} bookings={confirmedBookings} currentUser={currentUser} dateBlockouts={dateBlockouts} errorCarga={errorCarga} horarioLaboral={horarioLaboral} onAddBarber={handleAddBarber} onAddService={handleAddService} onDeleteBarber={handleDeleteBarber} onDeleteBooking={handleDeleteBooking} onDeleteService={handleDeleteService} onLogout={handleLogout} onSaveDateBlockouts={handleSaveDateBlockouts} onSaveHorarios={handleSaveHorarios} onToggleBarberActivo={handleToggleBarberActivo} onUpdateBarber={handleUpdateBarber} onUpdateBooking={handleUpdateBooking} onUpdateService={handleUpdateService} services={services} timeSlots={timeSlots} />
       ) : mainView === 'my-bookings' ? (
         <MisTurnos calendarMax={toIsoDate(calendarEnd)} calendarMin={initialCalendarDate} canCancelBooking={canCancelBooking} currentUser={currentUser} dateBlockouts={dateBlockouts} expiredBookings={expiredBookings} horarioLaboral={horarioLaboral} onBack={handleBackToClient} onCancelBooking={handleCancelBooking} onReschedule={handleRescheduleBooking} pendingBookings={pendingBookings} takenSlots={takenSlots} timeSlots={timeSlots} />
       ) : (

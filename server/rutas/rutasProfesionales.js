@@ -114,7 +114,7 @@ router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res)
 
 // ── Horarios laborales ────────────────────────────────
 // LEER HORARIOS LABORALES (todos, para el turnero y el admin)
-router.get("/horarios", async (req, res) => {
+router.get("/horarios", jwtMiddleware, async (req, res) => {
   try {
     const db = await getPool();
     const result = await db.request()
@@ -171,7 +171,7 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
 
 // ── Bloqueos por fecha ────────────────────────────────
 // BLOQUEOS POR FECHA: listar todos (para el turnero)
-router.get("/bloqueos", async (req, res) => {
+router.get("/bloqueos", jwtMiddleware, async (req, res) => {
   try {
     const db = await getPool();
     const result = await db.request()

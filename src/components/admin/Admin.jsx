@@ -27,7 +27,7 @@ const createBookingForm = (b) => ({
   serviceId: b?.serviceId ?? '', bookingDate: b?.bookingDate ?? '', time: b?.time ?? '', status: b?.status ?? 'pending',
 });
 
-function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, horarioLaboral, onAddBarber, onAddService, onDeleteBarber, onDeleteBooking, onDeleteService, onLogout, onSaveDateBlockouts, onSaveHorarios, onToggleBarberActivo, onUpdateBarber, onUpdateBooking, onUpdateService, services, timeSlots }) {
+function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, errorCarga, horarioLaboral, onAddBarber, onAddService, onDeleteBarber, onDeleteBooking, onDeleteService, onLogout, onSaveDateBlockouts, onSaveHorarios, onToggleBarberActivo, onUpdateBarber, onUpdateBooking, onUpdateService, services, timeSlots }) {
   // ── Estado de formularios y selección ─────────────
   const [activeTab, setActiveTab] = useState('overview');
   const [barberForm, setBarberForm] = useState(emptyBarberForm);
@@ -93,6 +93,10 @@ function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, hora
         <div><strong>{statusCount.pending + statusCount.confirmed}</strong><span>Turnos activos</span></div>
         <div><strong>{statusCount.completed + statusCount['no-show']}</strong><span>Histórico</span></div>
       </section>
+      {/* El panel se dibuja siempre (si no, el admin no podría ni crear el
+          primer servicio), así que el aviso de carga fallida va arriba: sin
+          esto, un backend caído se veía como un panel vacío pero "funcionando". */}
+      {errorCarga && <div className="simple-feedback error admin-feedback">{errorCarga} Los paneles de abajo se muestran igual, pero esos datos están vacíos o desactualizados.</div>}
       <section className="simple-card admin-tabs">
         {tabOptions.map((t) => <button key={t.id} type="button" aria-pressed={activeTab === t.id} className={`admin-tab ${activeTab === t.id ? 'selected' : ''}`} onClick={() => setActiveTab(t.id)}>{t.label}</button>)}
       </section>

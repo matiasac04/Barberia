@@ -11,6 +11,7 @@ const rutasClientes = require("./rutas/rutasClientes");
 const rutasTurnos = require("./rutas/rutasTurnos");
 const rutasProfesionales = require("./rutas/rutasProfesionales");
 const rutasServicios = require("./rutas/rutasServicios");
+const { getPool } = require("./conexion");
 
 // ── Servidor y middleware ─────────────────────────────
 const app = express();
@@ -57,4 +58,12 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
+
+  // Pre-calentado de la conexión a la base. Abrirla contra la nube (DNS, TLS
+  // y login) cuesta ~2,4 s medidos; sin esto, ese costo lo paga el PRIMER
+  // request de cada arranque, o sea el primer click del usuario. Con esto lo
+  // paga el server en el arranque, en segundo plano. No bloquea el arranque
+  // (no va con await) y getPool() ya sabe reconectar sola si se cae, así que
+  // si falla solo queda un warning: la app sigue igual y reintenta al vuelo.
+  getPool().catch((e) => console.error("No se pudo pre-calentar la conexión a la base:", e.message));
 });

@@ -3,9 +3,42 @@ const router = require("express").Router();
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 
+// ── Regla de negocio: 24 h de antelación ─────────────
+// El frontend la aplica con canCancelBooking (src/utilidades/ayudantes.js),
+// pero eso alcanza SOLO a la UI: cualquiera podría llamar a la API a mano y
+// cancelar o reprogramar un turno para dentro de una hora. Por eso la misma
+// regla se valida acá, en el servidor, que es el que decide de verdad.
+const MS_24H = 24 * 60 * 60 * 1000;
+
+// Arma el Date real del turno a partir de una fecha 'YYYY-MM-DD' y una hora
+// 'HH:MM' / 'HH:MM:SS'.
+//
+// OJO con el formato de la fecha: tiene que ser SIEMPRE el string que devuelve
+// CONVERT(varchar(10), fecha, 23), nunca el Date crudo de la columna DATE.
+// tedious viene con useUTC: true, o sea que un DATE llega como medianoche UTC
+// y en Argentina (UTC-3) getDate() te devuelve el día ANTERIOR: la regla de las
+// 24 h quedaría corrida un día entero. Por eso las consultas de abajo piden
+// fecha y hora ya como texto, que es la convención que usa todo el resto del
+// proyecto (ver CONVERT en /turnos y /turnos/ocupados).
+const inicioDeTurno = (fechaIso, horaInicio) => {
+  const f = new Date(`${String(fechaIso ?? '').trim()}T00:00:00`);
+  if (Number.isNaN(f.getTime())) return null;
+  const [h, m] = String(horaInicio ?? "00:00").slice(0, 5).split(":").map(Number);
+  const inicio = new Date(f.getFullYear(), f.getMonth(), f.getDate(), h || 0, m || 0, 0, 0);
+  return Number.isNaN(inicio.getTime()) ? null : inicio;
+};
+
+// ¿Al turno le quedan menos de 24 h? Si la fecha/hora viniera corrupta no
+// bloqueamos nada (que el resto de las validaciones hablen).
+const tieneMenosDe24h = (fechaIso, horaInicio) => {
+  const inicio = inicioDeTurno(fechaIso, horaInicio);
+  if (!inicio) return false;
+  return inicio.getTime() - Date.now() < MS_24H;
+};
+
 // ── Disponibilidad (turnos libres/ocupados) ───────────
 // VER TURNOS DISPONIBLES
-router.get("/turnos/disponibles", async (req, res) => {
+router.get("/turnos/disponibles", jwtMiddleware, async (req, res) => {
   const { fecha, idProfesional } = req.query;
   try {
     const db = await getPool();
@@ -21,7 +54,7 @@ router.get("/turnos/disponibles", async (req, res) => {
 });
 
 // VER TURNOS OCUPADOS EN UN RANGO (para el turnero: contar libres por día)
-router.get("/turnos/ocupados", async (req, res) => {
+router.get("/turnos/ocupados", jwtMiddleware, async (req, res) => {
   const { inicio, fin } = req.query;
   try {
     const db = await getPool();
@@ -137,11 +170,16 @@ router.patch("/turnos/:id/cancelar", jwtMiddleware, async (req, res) => {
     const db = await getPool();
     const turno = await db.request()
       .input("id", sql.Int, req.params.id)
-      .query("SELECT idCliente FROM Turno WHERE idTurno = @id");
+      .query("SELECT idCliente, CONVERT(varchar(10), fecha, 23) AS fecha, horaInicio FROM Turno WHERE idTurno = @id");
     if (turno.recordset.length === 0) return res.status(404).json({ error: "Turno no encontrado." });
-    const idCliente = turno.recordset[0].idCliente;
+    const { idCliente, fecha, horaInicio } = turno.recordset[0];
     if (req.user.role !== 'admin' && Number(req.user.idCliente) !== Number(idCliente)) {
       return res.status(403).json({ error: "No tenés permiso para cancelar este turno." });
+    }
+    // Solo al cliente lo traba la antelación: el admin puede tocar cualquier
+    // turno incluso sobre la hora (para corregir errores de agenda).
+    if (req.user.role !== 'admin' && tieneMenosDe24h(fecha, horaInicio)) {
+      return res.status(400).json({ error: "No se puede cancelar con menos de 24 horas de antelación. Contactanos al local." });
     }
     await db.request()
       .input("id", sql.Int, req.params.id)
@@ -160,7 +198,7 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     const db = await getPool();
     const turno = await db.request()
       .input("id", sql.Int, req.params.id)
-      .query("SELECT idCliente, idProfesional, fecha, horaInicio FROM Turno WHERE idTurno = @id");
+      .query("SELECT idCliente, idProfesional, fecha, horaInicio, CONVERT(varchar(10), fecha, 23) AS fechaIso FROM Turno WHERE idTurno = @id");
     if (turno.recordset.length === 0) return res.status(404).json({ error: "Turno no encontrado." });
     const turnoActual = turno.recordset[0];
     const idCliente = turnoActual.idCliente;
@@ -169,6 +207,13 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     }
     if (estado !== undefined && req.user.role !== 'admin') {
       return res.status(403).json({ error: "Solo el administrador puede cambiar el estado de un turno." });
+    }
+    // Reprogramar es tan "liberar el horario" como cancelar, así que lleva la
+    // misma antelación de 24 h. Se mide sobre el turno ACTUAL (el que se está
+    // por liberar), no sobre el nuevo: arrastrar un turno de la semana que
+    // viene a otra fecha no es una cancelación de último momento.
+    if (req.user.role !== 'admin' && (fecha !== undefined || horaInicio !== undefined) && tieneMenosDe24h(turnoActual.fechaIso, turnoActual.horaInicio)) {
+      return res.status(400).json({ error: "No se puede reprogramar con menos de 24 horas de antelación. Contactanos al local." });
     }
 
     if (fecha !== undefined) {

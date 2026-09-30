@@ -45,6 +45,18 @@ const config = {
 let pool; 
 let lastPoolCheck = 0;
 const POOL_PING_INTERVAL = 5000;
+// reconociendo → la promesa de la conexión que se está ABRIENDO ahora mismo.
+// Existe para que N pedidos que llegan juntos (la carga inicial de la app
+// dispara 6 requests en paralelo) NO abran 6 conexiones: el primero abre la
+// suya y los demás esperan a esa MISMA promesa. Sin esto, `pool` sigue
+// undefined hasta que el await termina, y cada llamada concurrente se saltaba
+// los dos casos de arriba y terminaba en su propio sql.connect().
+// Las conexiones perdedoras nunca se cerraban (Somee, al ser gratis, tiene
+// muy pocos slots y los sharing los apuran), así que además se fugaban
+// conexiones en cada montaje. Antes: 6 conexiones en el primer arranque,
+// ahora: 1. OJO: esto NO reduce la latencia del primer request (medido: 2,6 s
+// igual en ambos casos) — el costo está en abrir la conexión contra la nube.
+let reconociendo = null;
 
 // getPool() devuelve una conexión lista para usar (la crea o la renueva si hace falta).
 // Todos los routers hacen: const { getPool } = require('../conexion'); y usan esto.
@@ -55,32 +67,45 @@ async function getPool() {
         return pool;
     }
 
-    // 2) Pasaron 5 segundos y ya teníamos pool → pregunto "¿seguís ahí?".
-    if (pool) {
-        try {
-            // "SELECT 1" = el ping: la base solo responde "1", no trae datos.
-            // Si responde, la conexión está viva → renovamos el timestamp.
-            await pool.request().query("SELECT 1");
+    // 2) Hay que pingear o conectar. Si ya hay una conexión abriéndose, nos
+    //    enganchamos a esa (case 2 y 3 Shared). Si no, arrancamos el cycle.
+    if (!reconociendo) {
+        reconociendo = (async () => {
+            // 2a) Pasaron 5 segundos y ya teníamos pool → "¿seguís ahí?".
+            if (pool) {
+                try {
+                    // "SELECT 1" = el ping: la base solo responde "1", no trae datos.
+                    // Si responde, la conexión está viva → renovamos el timestamp.
+                    await pool.request().query("SELECT 1");
+                    lastPoolCheck = Date.now();
+                    return pool;
+                } catch {
+                    // No respondió → el pool está MUERTO. Lo cerramos (por las dudas)
+                    // y lo marcamos como undefined para que se cree uno nuevo abajo.
+                    try { await pool.close(); } catch {}
+                    pool = undefined;
+                }
+            }
+
+            // 2b) No hay pool (primera vez) o quedó inválido → conectamos de nuevo.
+            try {
+                pool = await sql.connect(config);
+            } catch (err) {
+                console.error("Error al conectar a la base de datos: ", err);
+                throw err;  // si no se puede conectar, no hay nada que hacer
+            }
             lastPoolCheck = Date.now();
+            console.log("¡Conectado exitosamente al SQL Server de la nube!");
             return pool;
-        } catch {
-            // No respondió → el pool está MUERTO. Lo cerramos (por las dudas)
-            // y lo marcamos como undefined para que se cree uno nuevo abajo.
-            try { await pool.close(); } catch {}
-            pool = undefined;
-        }
+        })().finally(() => {
+            // Libera el lock: el próximo pedido que necesite pool puede
+            // arrancar su propio cycle (y si este falló, puede reintentar).
+            reconociendo = null;
+        });
     }
 
-    // 3) No hay pool (primera vez) o quedó inválido → conectamos de nuevo.
-    try {
-      pool = await sql.connect(config);
-    } catch (err) {
-      console.error("Error al conectar a la base de datos: ", err);
-      throw err;  // si no se puede conectar, no hay nada que hacer
-    }
-    lastPoolCheck = Date.now();
-    console.log("¡Conectado exitosamente al SQL Server de mi Windows!");
-    return pool;
+    // 3) Devolvemos la conexión: la que ya estaba, o la que se está abriendo.
+    return reconociendo;
 }
 
 // Exportamos el módulo mssql (lo usan las rutas para transacciones y tipos)
