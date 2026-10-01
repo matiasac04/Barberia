@@ -1,15 +1,43 @@
+// ═══════════════════════════════════════════════════════════════════
+// CAPA DE COMUNICACIÓN CON EL BACKEND (API REST)
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA ESTE MÓDULO?
+//
+// Actúa como "capa de servicios" (service layer): centraliza TODAS las
+// llamadas HTTP al backend Express. En lugar de hacer fetch disperso por
+// componentes, App.jsx llama a estas funciones exportadas.
+//
+// FLUJO DE UNA PETICIÓN:
+// 1. Componente/App.jsx llama a una función (ej. obtenerProfesionales())
+// 2. Esa función construye path/opciones y llama a peticion()
+// 3. peticion() arma URL completa (API_URL + path), headers y body
+// 4. Hace fetch() al backend (http://localhost:3000 por defecto)
+// 5. Parsea respuesta JSON. Si !res.ok → lanza Error con .status + mensaje
+// 6. Devuelve data (JSON) al llamador
+// 7. App.jsx actualiza estado con la respuesta
+//
+// ¿POR QUÉ ASÍ?
+// - Un solo punto para cambiar base URL (VITE_API_URL en prod)
+// - Manejo uniforme de errores (status + mensaje del server)
+// - Headers de auth automáticos (Bearer token) cuando se pasa token
+// - Serialización JSON consistente
+//
 // ── Configuración y helper de peticiones ─────────────
-// API_URL: dónde vive el backend. En desarrollo usa localhost:3000.
-// En producción (Vercel+Bolmo) se cambia con la variable VITE_API_URL.
+// API_URL: base del backend. En desarrollo localhost:3000.
+// En producción (Vercel + Belmo) se define VITE_API_URL en variables de entorno.
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
-// peticion(): el "traductor" entre el frontend y el backend.
-// Todas las funciones de abajo terminan llamándolo con un path y opciones.
-//   - method: método HTTP (GET por defecto, POST/PATCH/PUT/DELETE según la acción).
-//   - token:  si llega, se agrega el header Authorization: Bearer <token> (usuario logueado).
-//   - body:   si llega, se envía como JSON y se marca Content-Type: application/json.
-// Devuelve el JSON que respondió el server; si hubo error, lanza una excepción
-// con .status y el mensaje que mandó el server.
+// peticion(): helper genérico para todas las requests.
+// Parámetros (opciones):
+//   - method: HTTP (GET por defecto)
+//   - token:  si existe → agrega Authorization: Bearer <token> (JWT)
+//   - body:   si existe → JSON.stringify + Content-Type: application/json
+//   - headers: extras que se mezclan
+// Comportamiento:
+//   - Lee respuesta, intenta parsear JSON (catch → {} si no es JSON)
+//   - Si res.ok → devuelve data. Si no → crea Error con data.error o genérico
+//     y le agrega .status = res.status (útil para 401/403/409)
+//   - Lanza excepción al llamador (quien decide cómo mostrar feedback)
 const peticion = async (path, { method = "GET", token, body, headers = {} } = {}) => {
   const h = { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}), ...headers };
   const res = await fetch(`${API_URL}${path}`, { method, headers: h, ...(body ? { body: JSON.stringify(body) } : {}) });

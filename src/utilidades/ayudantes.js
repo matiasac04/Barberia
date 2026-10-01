@@ -1,5 +1,30 @@
+// ═══════════════════════════════════════════════════════════════════
+// UTILIDADES DE FECHAS, HORARIOS, SLOTS Y ESTADOS
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONAN ESTAS FUNCIONES?
+//
+// Este módulo concentra TODA la lógica pura (sin efectos ni estado React)
+// relacionada con fechas, horarios y disponibilidad. Eso permite:
+// - Reutilizarla en App.jsx, Inicio.jsx, MisTurnos.jsx, Admin/Horarios.jsx, etc.
+// - Mantener las reglas de negocio en UN SOLO LUGAR (ventana de 30 días,
+//   días cerrados, slots de 30 min, >24h para cancelar).
+// - Hacerla fácil de testear (solo recibe datos y devuelve resultados).
+//
+// Convención: trabaja con fechas en formato 'YYYY-MM-DD' (ISO sin hora)
+// para evitar problemas de zona horaria al comparar días.
+//
+// FLUJO BÁSICO:
+// 1. toIsoDate() normaliza cualquier valor a 'YYYY-MM-DD'
+// 2. getWeekdayPattern() traduce getDay() (JS) a patrón (mon/tue/wed/thu/fri/sat)
+// 3. getWeeklySlots() arma slots del día: primero busca HorarioLaboral (DB),
+//    si no hay, usa fallbackSlots (semilla)
+// 4. getDayFreeSlots() resta ocupados + bloqueos → devuelve libres
+// 5. resolveBookingStatus() decide estado lógico (pending/expired/completed...)
+// 6. canCancelBooking() aplica regla > 24 hs (frontend + backend valida)
+//
 // ── Formato de fechas e ISO ───────────────────────────
-// Formatter con horario/idioma argentino: p. ej. sábado, 24 de oct.
+// dateFormatter: formatea etiquetas cortas en español argentino
+// Ejemplo: new Date('2026-10-24') → "sáb, 24 oct." (luego limpiamos el punto)
 const dateFormatter = new Intl.DateTimeFormat('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })
 
 // toIsoDate(value): pasa cualquier fecha a texto 'YYYY-MM-DD'.

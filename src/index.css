@@ -1,7 +1,41 @@
+/* ═══════════════════════════════════════════════════════════════════
+   index.css — BASE GLOBAL DEL TEMA (se importa UNA vez en main.jsx)
+   ═══════════════════════════════════════════════════════════════════
+   ¿CÓMO FUNCIONA?
+
+   Este archivo define el "sistema de diseño" de la app en dos capas:
+
+   1. EL RESET (* { box-sizing: border-box })
+      Para que el padding de un elemento se sume DENTRO de su ancho y no
+      lo empuje. Sin esto, todo el layout se descuadra al agregar padding.
+
+   2. LAS VARIABLES CSS (:root)
+      Son como "constantes" del tema. Se definen UNA vez acá y se usan en
+      todo el proyecto con var(--nombre). Si mañana cambia el dorado de la
+      barbería, se edita UNA línea y se actualiza toda la app.
+      OJO: App.jsx las referencia desde JavaScript (por ejemplo
+      'var(--danger, #e05a4f)'), o sea que también son accesibles desde el código.
+
+   Qué hay en cada grupo de variables:
+   - --bg-0 / --bg-1  → fondos (el principal y uno más claro para cards)
+   - --card / --card-soft / --card-strong → opacidades de las tarjetas
+   - --gold / --gold-soft / --gold-deep / --copper → la paleta de marca
+   - --gold-gradient → degradado dorado (botones y detalles destacados)
+   - --text-hi / --text-mid / --text-low → los tres niveles de texto
+   - --ok / --ok-bg / --err / --err-bg → verde de éxito y rojo de error
+   - --radius-lg/md/sm, --shadow-card, --shadow-pop → bordes y sombras
+   - color-scheme: dark → le dice al navegador que use controles oscuros
+   ═══════════════════════════════════════════════════════════════════ */
+
 /* ── Reset y variables globales del tema ────────────── */
 * { box-sizing: border-box; }
 :root { font-family: "Outfit", "Segoe UI", system-ui, sans-serif; line-height: 1.5; font-weight: 400; color: #f7f0e1; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; --font-display: "Playfair Display", Georgia, "Times New Roman", serif; --font-body: "Outfit", "Segoe UI", system-ui, sans-serif; --bg-0: #0d0a06; --bg-1: #17110a; --card: rgba(31, 23, 14, 0.72); --card-soft: rgba(255, 255, 255, 0.035); --card-strong: rgba(255, 255, 255, 0.07); --line: rgba(236, 190, 100, 0.14); --line-soft: rgba(236, 190, 100, 0.09); --line-strong: rgba(236, 190, 100, 0.3); --gold: #e6b254; --gold-soft: #f3cf85; --gold-deep: #b98a33; --copper: #ef9f5f; --gold-gradient: linear-gradient(135deg, #f0c877 0%, #e0a83f 55%, #c98f2e 100%); --text-hi: #f7f0e1; --text-mid: #d2c7b2; --text-low: #8e8271; --ok: #7fd6a2; --ok-bg: rgba(63, 185, 120, 0.14); --err: #f1999b; --err-bg: rgba(224, 92, 96, 0.14); --radius-lg: 24px; --radius-md: 16px; --radius-sm: 12px; --shadow-card: 0 24px 60px rgba(0, 0, 0, 0.42); --shadow-pop: 0 30px 80px rgba(0, 0, 0, 0.55); color-scheme: dark; }
+
 /* ── Estilos base de elementos ──────────────────────── */
+/* Defaults de cada elemento: sin margen en los títulos, body sin margen,
+   inputs y botones heredando la tipografía del body, scrollbar con el color
+   de marca, y un focus-visible dorado (accesibilidad: el outline solo aparece
+   al navegar con teclado, no al hacer clic). */
 html { scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; background: var(--bg-0); }
 a { color: inherit; }
@@ -16,7 +50,11 @@ button { cursor: pointer; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(230, 178, 84, 0.45); }
 button:focus, input:focus, select:focus { outline: none; }
 button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
 /* ── Accesibilidad (movimiento reducido) ────────────── */
+/* Si el usuario pidió menos animación en su sistema operativo, este bloque
+   apaga TODO: transiciones, animaciones y el scroll suave quedan a ~0.
+   Respeta la preferencia del sistema (accesibilidad real, no decorativa). */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }

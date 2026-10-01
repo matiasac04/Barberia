@@ -1,14 +1,59 @@
+// ═══════════════════════════════════════════════════════════════════
+// server/rutas/rutasProfesionales.js — PROFESIONALES, HORARIOS Y BLOQUEOS
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Este archivo maneja todo lo que define QUIÉN ATIENDE y CUÁNDO:
+//
+//   GET    /profesionales                    → lista (PÚBLICO)
+//   POST   /profesionales                    → crea         (solo admin)
+//   DELETE /profesionales/:id                → da de baja   (solo admin)
+//   PATCH  /profesionales/:id                → edita        (solo admin)
+//   GET    /horarios                         → horarios de todos (con token)
+//   PUT    /profesionales/:id/horarios       → reemplaza el horario semanal
+//   GET    /bloqueos                         → bloqueos de todos (con token)
+//   POST   /profesionales/:id/bloqueos       → reemplaza los bloqueos de un día
+//
+// TRES DECISIONES DE DISEÑO QUE VALE LA PENA ENTENDER:
+//
+// 1. LA BAJA ES LÓGICA, NO FÍSICA.
+//    DELETE pone activo = 0 en vez de borrar la fila. Motivo: si un
+//    profesional tiene turnos PASSADOS, borrarlo rompería el historial (o
+//    lo dejaría huérfano). Con la baja lógica el turno viejo sigue
+//    mostrando a su profesional, pero el cliente ya no puede reservar con él
+//    (el GET sin incluirInactivos lo filtra por activo = 1).
+//
+// 2. EL EMAIL ES OBLIGATORIO EN LA DB, PERO NO EN LA UI.
+//    La tabla Profesional tiene email UNIQUE. Si el admin no lo carga, se
+//    genera uno interno fictitious (prof_<timestamp>_<random>@barberia.local)
+//    para no romper el UNIQUE. Por eso crear SÍ puede dar 409 si el admin
+//    cargó un email repetido a propósito.
+//
+// 3. HORARIOS Y BLOQUEOS SE REEMPLAZAN, NO SE PARCHEAN.
+//    PUT /horarios borra TODAS las filas del profesional e inserta las
+//    nuevas; POST /bloqueos borra las de ESE DÍA e inserta las nuevas.
+//    Van en transacción: si un INSERT falla a la mitad, no queda un
+//    professional con la mitad de su horario viejo y la mitad del nuevo.
 const router = require("express").Router();
 
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 
 // ── Helpers de profesionales ──────────────────────────
+// generarEmailProfesional(): email interno válido y único para cuando el
+// admin no carga uno. El timestamp + random garantizan que no colisione
+// con el UNIQUE de la columna email.
 const generarEmailProfesional = () => `prof_${Date.now()}_${Math.floor(Math.random() * 1000000)}@barberia.local`;
+// normalizarEmailOpcional(): '' / null / undefined → null; si hay valor,
+// lo recorta. Evita guardar strings vacíos que ensucian el UNIQUE.
 const normalizarEmailOpcional = (email) => (email && String(email).trim() ? String(email).trim() : null);
 
 // ── CRUD profesionales ────────────────────────────────
-// LISTAR PROFESIONALES (activos para el turnero; con ?incluirInactivos=1 trae todos)
+// GET /profesionales?incluirInactivos=1
+// Sin ese query param → solo los activos (los que ve el turnero).
+// Con "1" → todos (lo usa el panel admin para poder reactivar bajas).
+// El SELECT arma el nombre completo con LTRIM/RTRIM para que no queden
+// espacios dobles cuando el apellido es NULL.
 router.get("/profesionales", async (req, res) => {
   try {
     const db = await getPool();
@@ -23,7 +68,8 @@ router.get("/profesionales", async (req, res) => {
   }
 });
 
-// CREAR PROFESIONAL
+// POST /profesionales — alta (solo admin). Solo el nombre es obligatorio;
+// apellido/telefono pueden ir vacíos, y el email se genera si no viene.
 router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
   const { nombre, apellido, email, telefono } = req.body;
   if (!nombre || !String(nombre).trim()) {
@@ -32,6 +78,7 @@ router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
   try {
     const db = await getPool();
     const apellidoFinal = apellido && String(apellido).trim() ? String(apellido).trim() : null;
+    // Si no hay email → generado. Si hay → el que cargó el admin.
     const emailFinal = normalizarEmailOpcional(email) || generarEmailProfesional();
     const result = await db.request()
       .input("nombre", sql.VarChar, String(nombre).trim())
@@ -45,6 +92,7 @@ router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
       `);
     res.status(201).json({ mensaje: "Profesional registrado.", idProfesional: result.recordset[0].idProfesional });
   } catch (error) {
+    // 2627/2601 = violación de índice único (email repetido).
     const violacionUnica = error?.number === 2627 || error?.number === 2601;
     if (violacionUnica) {
       return res.status(409).json({ error: "Ya existe un profesional con ese mail. Usá otro o dejá el mail vacío." });
@@ -54,7 +102,8 @@ router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
   }
 });
 
-// BAJAR PROFESIONAL
+// DELETE /profesionales/:id — BAJA LÓGICA (solo admin): activo = 0.
+// No borra la fila (ver el punto 1 de la cabecera).
 router.delete("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res) => {
   try {
     const db = await getPool();
@@ -69,7 +118,10 @@ router.delete("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res
   }
 });
 
-// ACTUALIZAR PROFESIONAL (solo actualiza los campos que vengan en el body)
+// PATCH /profesionales/:id — edición parcial (solo admin).
+// Casos de uso: editar nombre/telefono, o el toggle activar/desactivar
+// (el admin manda { activo: true/false }). Mismo patrón de SET dinámico que
+// servicios. Si no viene ningún campo → 400.
 router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res) => {
   try {
     const db = await getPool();
@@ -90,6 +142,9 @@ router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res)
       reqPatch.input("telefono", sql.VarChar, req.body.telefono || null);
     }
     if (req.body.email !== undefined) {
+      // El email tiene un caso especial: si el admin lo borra (viene vacío),
+      // NO se deja NULL porque rompería el UNIQUE de los ya existentes.
+      // Se lee el actual y, si tampoco sirve, se genera uno interno.
       const cur = await db.request()
         .input("id", sql.Int, id)
         .query("SELECT email FROM Profesional WHERE idProfesional = @id");
@@ -98,6 +153,7 @@ router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res)
       set.push("email = @email");
       reqPatch.input("email", sql.VarChar, emailFinal);
     }
+    // activo llega como boolean (del toggle del admin) → se guarda como BIT.
     if (typeof req.body.activo === "boolean") {
       set.push("activo = @activo");
       reqPatch.input("activo", sql.Bit, req.body.activo ? 1 : 0);
@@ -113,7 +169,10 @@ router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res)
 });
 
 // ── Horarios laborales ────────────────────────────────
-// LEER HORARIOS LABORALES (todos, para el turnero y el admin)
+// GET /horarios — toda la tabla HorarioLaboral, en formato LISTO PARA EL JS:
+//   diaSemana (2..6 = mar..sáb, según getDay de JS) y las horas como texto
+//   'HH:MM' (CONVERT ... 108), no como Time de SQL Server.
+// Requiere token porque expone la agenda interna del local.
 router.get("/horarios", jwtMiddleware, async (req, res) => {
   try {
     const db = await getPool();
@@ -132,7 +191,11 @@ router.get("/horarios", jwtMiddleware, async (req, res) => {
   }
 });
 
-// EDITAR HORARIOS
+// PUT /profesionales/:id/horarios — reemplaza TODO el horario semanal
+// (solo admin). Recibe { horarios: [{ diaSemana, horaEntrada, horaSalida }, ...] }.
+// En una transacción: borra todas las filas del profesional y reinserta la
+// nueva. Si un INSERT falla a la mitad → rollback y no queda un horario
+// híbrido (mitad viejo, mitad nuevo).
 router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (req, res) => {
   const { horarios } = req.body;
   if (!Array.isArray(horarios)) return res.status(400).json({ error: "Falta la lista de horarios." });
@@ -142,10 +205,12 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
     const transaction = new sql.Transaction(db);
     await transaction.begin();
     try {
+      // Paso 1: borrar el horario anterior de este profesional.
       await new sql.Request(transaction)
         .input("id", sql.Int, profesionalId)
         .query("DELETE FROM HorarioLaboral WHERE idProfesional = @id");
 
+      // Paso 2: insertar el nuevo (si viene lista; si viene vacía = "no trabaja").
       if (horarios.length > 0) {
         for (const h of horarios) {
           await new sql.Request(transaction)
@@ -170,7 +235,9 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
 });
 
 // ── Bloqueos por fecha ────────────────────────────────
-// BLOQUEOS POR FECHA: listar todos (para el turnero)
+// GET /bloqueos — todos los bloqueos (con token). Fecha como texto
+// 'YYYY-MM-DD'. El frontend los usa para tapar slots en el calendario y en
+// el cálculo de disponibles (getDayFreeSlots).
 router.get("/bloqueos", jwtMiddleware, async (req, res) => {
   try {
     const db = await getPool();
@@ -186,7 +253,13 @@ router.get("/bloqueos", jwtMiddleware, async (req, res) => {
   }
 });
 
-// BLOQUEOS POR FECHA: guardar (reemplaza los de esa fecha). diaCompleto guarda hora NULL.
+// POST /profesionales/:id/bloqueos — reemplaza los bloqueos de UN DÍA
+// (solo admin). Body: { fecha, diaCompleto?, slots? }.
+//   - diaCompleto: true  → inserta UNA fila con hora = NULL. El frontend lo
+//     interpreta como "todo el día bloqueado" (getDateBlockedSlots).
+//   - slots: [...]       → inserta una fila por horario.
+// Siempre borra primero las de esa fecha, así el admin puede "desbloquear
+// todo" mandando slots: [] sin borrar filas a mano. Va en transacción.
 router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (req, res) => {
   const { fecha, diaCompleto, slots } = req.body || {};
   if (!fecha) return res.status(400).json({ error: "Falta la fecha." });
@@ -195,17 +268,21 @@ router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (r
     const transaction = new sql.Transaction(db);
     await transaction.begin();
     try {
+      // Borra los bloqueos previos de ESE profesional + ESA fecha.
       await new sql.Request(transaction)
         .input("id", sql.Int, req.params.id)
         .input("fecha", sql.Date, fecha)
         .query("DELETE FROM BloqueoHorario WHERE idProfesional = @id AND fecha = @fecha");
 
+      // Caso A: día completo → una sola fila con hora NULL ("cerrado todo").
       if (diaCompleto) {
         await new sql.Request(transaction)
           .input("id", sql.Int, req.params.id)
           .input("fecha", sql.Date, fecha)
           .query("INSERT INTO BloqueoHorario (idProfesional, fecha, hora) VALUES (@id, @fecha, NULL)");
-      } else if (Array.isArray(slots)) {
+      }
+      // Caso B: horarios sueltos → una fila por slot.
+      else if (Array.isArray(slots)) {
         for (const slot of slots) {
           await new sql.Request(transaction)
             .input("id", sql.Int, req.params.id)

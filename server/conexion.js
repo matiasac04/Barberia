@@ -1,16 +1,45 @@
-// ── Configuración de la conexión ──────────────────────
-// Este archivo se encarga de la CONEXIÓN con la base de datos SQL Server.
-// Las rutas del backend no conectan a la base por su cuenta: TODAS llaman
-// a getPool() (que exportamos al final) y reciben de acá la conexión lista.
+// ═══════════════════════════════════════════════════════════════════
+// server/conexion.js — GESTIÓN DE LA CONEXIÓN A SQL SERVER
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
 //
-// ¿Por qué un "pool"? Porque abrir una conexión a la DB es lento. En vez de
-// conectar y desconectar en cada consulta, abrimos UNA sola conexión una vez
-// y la reutilizamos para todos los pedidos. "Pool" = grupo de conexiones
-// reutilizables (acá, en la práctica, una única conexión compartida).
+// Este archivo es el ÚNICO que habla con la base de datos. Ninguna ruta
+// abre conexiones por su cuenta: todas llaman a getPool() y reciben la
+// conexión ya lista.
 //
-// ¿Dónde están las credenciales? NO están hardcodeadas acá (nunca hay que
-// poner la clave de la DB en el código, sobre todo si el repo es público).
-// Vienen de server/.env, que dotenv carga al hacer require('dotenv')...
+// EL PROBLEMA QUE RESUELVE (y por qué es tan defensivo):
+// La base está en la nube (SQL Server en Somee, plan gratuito), no local.
+// Eso trae dos problemas reales:
+//
+// 1. ABRIR UNA CONEXIÓN ES LENTA (~2,4 s medidos: DNS + TLS + login).
+//    Si cada request abriera y cerrara su propia conexión, cada click del
+//    usuario pagaría esa demora. Solución: un POOL (conexión única
+//    compartida) que se abre UNA vez y se reutiliza para todas las consultas.
+//
+// 2. LOS HOSTING GRATUITOS CORTAN LAS CONEXIONES INACTIVAS.
+//    Si nuestra conexión queda quieta un rato, el hosting la mata sin avisar
+//    y el pool queda "podrido": todas las consultas siguientes fallarían.
+//    Solución: un PING cada 5 s. Si la conexión no responde, se cierra y se
+//    crea una nueva automáticamente, sin reiniciar el servidor.
+//
+// EL PING Y EL "RECONOCIENDO":
+// - getPool() tiene 3 caminos:
+//     1) pool existe y se chequeó hace < 5 s → lo devuelve directo (rápido)
+//     2) toca pingear o conectar → arranca (o se engancha a) un ciclo
+//     3) devuelve la conexión (vieja o la que se está abriendo)
+//
+// - `reconociendo` es la promesa del ciclo que está ABRÍENDOSE ahora.
+//   Existe para que N requests simultáneos (la carga inicial dispara 6 en
+//   paralelo) NO abran N conexiones: el primero abre la suya y los demás
+//   esperan a ESA MISMA promesa. Sin esto, `pool` queda undefined hasta que
+//   el await termina, y cada llamada concurrente se salta el caso 1 y se
+//   va a su propio sql.connect() → 6 conexiones y 5 fugas (Somee tiene
+//   pocos slots). Con esto: 1 conexión.
+//   OJO: esto NO reduce la latencia del primer request (medido: 2,6 s igual
+//   en ambos casos) — el costo está en abrir la conexión contra la nube.
+//
+// require('dotenv').config() lee server/.env para que las credenciales
+// estén en process.env y NO hardcodeadas en el código.
 require('dotenv').config();
 
 const sql = require('mssql');
@@ -108,6 +137,8 @@ async function getPool() {
     return reconociendo;
 }
 
-// Exportamos el módulo mssql (lo usan las rutas para transacciones y tipos)
-// y getPool (para obtener la conexión lista).
+// Exportamos DOS cosas:
+// - sql: el módulo mssql completo. Las rutas lo necesitan para los tipos
+//   (sql.VarChar, sql.Int, sql.Date) y para las transacciones.
+// - getPool: la función que entrega la conexión lista para usar.
 module.exports = { sql, getPool };

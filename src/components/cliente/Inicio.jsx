@@ -1,11 +1,34 @@
-// ── Turnero del cliente (reserva de turnos en 5 pasos) ─
+// ═══════════════════════════════════════════════════════════════════
+// TURÑERO DEL CLIENTE — reserva de turnos en 5 pasos (wizard)
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Pantalla principal del cliente. Presenta la reserva como un WIZARD de
+// 5 pasos navegables (también visibles todos juntos en desktop):
+//   Paso 1: Elegí servicio   (chips con nombre, duración y precio)
+//   Paso 2: Elegí día        (Calendario mensual con slots libres por día)
+//   Paso 3: Elegí barbero    (chips con avatar de iniciales + libres)
+//   Paso 4: Elegí horario    (slots del día; los ocupados van 'disabled')
+//   Paso 5: Completá datos y confirmá (nombre + teléfono → handleSubmit)
+//
+// activeStep controla cuál panel está activo en mobile (desktop muestra
+// todos vía CSS). StepNav dibuja botones Volver/Siguiente.
+//
+// La disponibilidad la calcula App.jsx (availableSlots, unavailableSlots,
+// daySlots) y la PASA ya filtrada; este componente solo la pinta y managea
+// el estado del wizard. handleSubmit (App.jsx) revalida y llama POST /turnos.
+//
+// Reglas: domingos/lunes cerrados, ventana hoy→+30 días.
 import { useState } from 'react';
 import Calendario from './Calendario';
 import PieDePagina from '../comunes/PieDePagina';
 import Cabecera from '../comunes/Cabecera';
 import { getDayFreeSlots, getWeekdayPattern } from '../../utilidades/ayudantes';
+// avatarInitials: saca las iniciales del nombre (ej. "Juan Pérez" → "JP")
 const avatarInitials = (name) => name.split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+// isClosedDay: true si es domingo/lunes (getWeekdayPattern devuelve null)
 const isClosedDay = (ds) => !getWeekdayPattern(new Date(`${ds}T00:00:00`));
+// StepNav: barra de navegación del wizard (botones Volver / Siguiente)
 function StepNav({ onPrev, onNext }) {
   return (
     <div className="step-nav">

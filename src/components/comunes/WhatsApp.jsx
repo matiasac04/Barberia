@@ -1,4 +1,21 @@
-// ── Botón flotante de WhatsApp ────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// BOTÓN FLOTANTE DE WHATSAPP (componente compartido)
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Enlace flotante fijo que abre una conversación de WhatsApp con el local.
+// Aparece en TODAS las pantallas, incluso sin sesión iniciada (App.jsx lo
+// monta también en la vista de login), así el cliente siempre tiene un
+// canal de contacto para consultas.
+//
+// DETALLES:
+// - WHATSAPP_URL usa el formato wa.me/<código país><número sin + ni espacios>:
+//   '549' = Argentina (54) + móvil (9), seguido del número.
+// - target="_blank" + rel="noopener noreferrer" abre en pestaña nueva sin
+//   darle acceso a la ventana de origen (buena práctica de seguridad).
+// - El SVG es decorativo (aria-hidden) y el texto visible actúa como
+//   etiqueta accesible; aria-label duplica el texto para lectores de pantalla.
+// - Cambiar el número comercial solo requiere editar WHATSAPP_URL.
 const WHATSAPP_URL = 'https://wa.me/5493412272301'
 function WhatsApp() {
   return (

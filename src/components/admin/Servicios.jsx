@@ -1,4 +1,21 @@
-// ── Panel de servicios (alta, edición, eliminación) ───
+// ═══════════════════════════════════════════════════════════════════
+// PANEL DE SERVICIOS (admin) — catálogo de precios y duración
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Administra el catálogo que el cliente ve en el paso 1 del turnero.
+// Mismo patrón que el panel de Profesionales (dos modos en un form):
+//
+//   serviceForm.id vacío → ALTA    → onServiceSubmit → onAddService
+//   serviceForm.id con valor → EDICIÓN → onServiceSubmit → onUpdateService
+//   "Cancelar" (solo editando) → onCancelServiceEdit → limpia el form
+//
+// Campos: nombre (texto), precio ($ ARS) y duración (minutos).
+// Validación en App.jsx (handleServiceSubmit): nombre no vacío, precio > 0
+// y duración > 0. Precios formateados con toLocaleString('es-AR').
+//
+// OJO: eliminar es FÍSICO. Si el servicio tiene turnos asociados, el
+// backend responde 409 (FK de SQL Server) y el aviso se muestra al admin.
 function Servicios({ onCancelServiceEdit, onDeleteService, onServiceFormChange, onServiceSubmit, onStartEditService, serviceForm, services }) {
   return (
     <article className="simple-card admin-panel">

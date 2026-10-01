@@ -1,4 +1,31 @@
-// ── Imports y configuración ───────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// server/index.js — PUNTO DE ENTRADA DEL BACKEND (Express)
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Arranca el servidor HTTP que expone la API REST que consume el frontend.
+// El flujo completo de una petición:
+//
+//   Cliente (fetch) → express → MIDDLEWARES (helmet, cors, json, rate limit)
+//                   → RUTAS (server/rutas/*.js) → getPool() → SQL Server
+//                   ← respuesta JSON ← vuelve por el mismo camino ← al frontend
+//
+// MIDDLEWARES (se ejecutan EN ORDEN, de arriba hacia abajo):
+//   helmet  → cabeceras de seguridad (anti-XSS, CSP, etc.)
+//   cors    → permite que el frontend (otro origen) consuma la API
+//   json    → parsea body JSON a req.body
+//   limiter → frena abuso: máx 300 requests por IP cada 15 min (global)
+//   authLimiter → más estricto SOLO en /login y /registro: 20 por 15 min
+//     (protege contra ataques de fuerza bruta a contraseñas)
+//
+// RUTAS: se montan sin prefijo, cada archivo define sus propios paths
+// (rutasAuth, rutasClientes, rutasTurnos, rutasProfesionales, rutasServicios).
+//
+// Si una ruta no matchea ninguna → 404. Si algo lanza excepción → 500
+// (los errores se loguean en consola pero NO se filtran al cliente).
+//
+// require('dotenv').config() lee server/.env ANTES de usar process.env
+// (credenciales de la DB y JWT_SECRET).
 require('dotenv').config();
 
 const express = require("express");
@@ -14,12 +41,15 @@ const rutasServicios = require("./rutas/rutasServicios");
 const { getPool } = require("./conexion");
 
 // ── Servidor y middleware ─────────────────────────────
+// app = la aplicación Express. Acá se le registra todo lo que va a manejar.
 const app = express();
 
-app.use(helmet());
-app.use(cors());
-app.use(express.json());
+app.use(helmet());  // cabeceras de seguridad
+app.use(cors());    // CORS abierto (API pública de solo lectura + escritura con JWT)
+app.use(express.json());  // body JSON → req.body
 
+// Rate limit GLOBAL: 300 requests / 15 min por IP. Evita que un cliente
+// malicioso (o un bug en loop) genere millones de consultas a la DB.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -28,6 +58,8 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+// Rate limit para AUTENTICACIÓN: 20 intentos / 15 min por IP en /login y
+// /registro. Mucho más estricto: frena ataques de fuerza bruta a contraseñas.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -37,6 +69,8 @@ const authLimiter = rateLimit({
 app.use(["/login", "/registro"], authLimiter);
 
 // ── Rutas ─────────────────────────────────────────────
+// Cada router se registra con app.use sin prefijo. El path final de cada
+// endpoint está definido dentro del router (ej. router.get("/login", ...)).
 app.use(rutasAuth);
 app.use(rutasClientes);
 app.use(rutasTurnos);
@@ -44,16 +78,22 @@ app.use(rutasProfesionales);
 app.use(rutasServicios);
 
 // ── Manejo de errores ─────────────────────────────────
+// 404: ninguna ruta matcheó (catch-all, va después de las rutas reales).
 app.use((req, res) => {
   res.status(404).json({ error: "Ruta no encontrada." });
 });
 
+// 500: cualquier excepción no manejada en las rutas.
+// Se loguea en consola (para el dev) pero al cliente solo se le devuelve un
+// mensaje genérico, para no filtrar detalles internos de SQL/infraestructura.
+// NOTA: Express detecta este handler de 4 args (err, req, res, next).
 app.use((err, req, res, _next) => {
   console.error(err);
   res.status(500).json({ error: "Error interno del servidor." });
 });
 
 // ── Iniciar servidor ──────────────────────────────────
+// Puerto 3000 por defecto, o el que indique PORT en server/.env.
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {

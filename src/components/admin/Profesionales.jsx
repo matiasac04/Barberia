@@ -1,4 +1,26 @@
-// ── Panel de profesionales (altas, bajas, edición) ────
+// ═══════════════════════════════════════════════════════════════════
+// PANEL DE PROFESIONALES (admin) — altas, bajas y edición
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Gestiona quién atiende en la barbería. Tiene dos zonas:
+//
+// 1. FORMULARIO (arriba) — alta o edición:
+//    - barberForm.id vacío → MODO ALTA → onBarberSubmit → onAddBarber
+//    - barberForm.id con valor → MODO EDICIÓN → onBarberSubmit → onUpdateBarber
+//    - "Cancelar" (solo en edición) → onCancelBarberEdit → vuelve a vacío
+//
+// 2. LISTA — se divide en dos grupos según `activo`:
+//    - ACTIVOS (arriba): pueden recibir reservas.
+//        "Editar" → carga en el form. "Eliminar" → onDeleteBarber
+//          (baja LÓGICA: activo=0, NO borra la fila; los turnos
+//          históricos se conservan intactos).
+//    - DESACTIVADOS (abajo, en <details> plegado): los que fueron dados de baja.
+//        "Reactivar" → onToggleBarberActivo(id, false) → vuelve activo=1.
+//        "Editar" → igual que los activos.
+//
+// Usa `allBarbers` (activos + inactivos) si viene; si no, cae a `barbers`
+// (solo activos) para no romper si el backend no trae la lista completa.
 function Profesionales({ allBarbers, barbers, barberForm, onBarberFormChange, onBarberSubmit, onDeleteBarber, onStartEditBarber, onCancelBarberEdit, onToggleBarberActivo }) {
   // ── Separar activos de desactivados ────────────────
   const fuente = Array.isArray(allBarbers) && allBarbers.length > 0 ? allBarbers : barbers;

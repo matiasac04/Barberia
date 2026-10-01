@@ -1,4 +1,24 @@
-// ── Pantalla de inicio de sesión / registro ───────────
+// ═══════════════════════════════════════════════════════════════════
+// PANTALLA DE INICIO DE SESIÓN / REGISTRO
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Es la única pantalla visible cuando NO hay sesión activa (App.jsx lo
+// detecta: sin token o sin currentUser). Contiene DOS formularios en la
+// misma pantalla, elegiridos por authScreen:
+//
+//   'login'    → usuario/mail + contraseña → POST /login (Basic Auth)
+//   'register' → nombre, apellido, mail, contraseña, whatsapp → POST /registro
+//
+// Al elegir 'register' se muestra el formulario de alta; al elegir 'login',
+// el de entrada. onShowRegister/onShowLogin cambian authScreen en App.jsx.
+//
+// handleGoogleLogin es un MOCK (no hay OAuth real): crea un usuario falso
+// con token 'mock-google'. Ese usuario NO puede reservar (App.jsx valida
+// idCliente antes de POST /turnos), sirve solo para probar la UI.
+//
+// authFeedback muestra mensajes de éxito/error del proceso (vienen de App.jsx).
+// Todos los handlers y valores vienen por props desde App.jsx.
 import PieDePagina from '../comunes/PieDePagina';
 import logoTijera from '../../assets/logo-tijera.svg';
 function IniciarSesion({ authScreen, authFeedback, handleLoginSubmit, handleRegisterSubmit, handleGoogleLogin, loginEmail, loginPassword, onShowLogin, onShowRegister, registerForm, setLoginEmail, setLoginPassword, setRegisterForm }) {

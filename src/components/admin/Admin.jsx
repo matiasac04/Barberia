@@ -1,4 +1,23 @@
-// ── Panel de administración (orquestador de paneles) ─
+// ═══════════════════════════════════════════════════════════════════
+// PANEL DE ADMINISTRACIÓN — orquestador de pestañas
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Es el "shell" del admin. No hace llamadas a la API directamente: recibe
+// de App.jsx los datos (bookings, barbers, services, horarios, bloqueos)
+// y los HANDLERS CRUD ya listos (onAddBarber, onUpdateBooking, etc.).
+//
+// Su trabajo es:
+// 1. Manejar la navegación entre 6 PESTAÑAS (activeTab):
+//    Resumen · Profesionales · Servicios · Horarios · Turnos · Agenda
+// 2. Manejar el ESTADO DE LOS FORMULARIOS (alta/edición de profesional,
+//    servicio y turno) —incluido qué registro se está editando (form.id)
+// 3. DERIVAR datos: agenda agrupada por fecha (agendaGroups) y conteo
+//    de turnos por estado (statusCount) para las tarjetas del resumen.
+// 4. Delegar el render a cada panel, pasándole datos y handlers.
+//
+// Si el usuario cambia de profesional/turno, se reselecciona el primero
+// válido (useEffects) para no dejar forms apuntando a algo inexistente.
 import { useEffect, useMemo, useState } from 'react';
 import { toIsoDate } from '../../utilidades/ayudantes';
 import Agenda from './Agenda';
@@ -11,6 +30,8 @@ import Horarios from './Horarios';
 import Servicios from './Servicios';
 
 // ── Constantes de formularios y opciones ──────────────
+// Etiquetas de estado (para mostrar en listas)
+// Opciones de estado (para el <select> del formulario de turno)
 const bookingStatusLabels = { pending: 'Pendiente', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'No se presentó', cancelled: 'Cancelado', expired: 'Expirado' };
 const bookingStatusOptions = [
   { value: 'pending', label: 'Pendiente' }, { value: 'confirmed', label: 'Confirmado' },

@@ -1,4 +1,23 @@
-// ── Turnos del cliente (pendientes, expirados, reprogramar) ──
+// ═══════════════════════════════════════════════════════════════════
+// MIS TURNOS (cliente) — pendientes, expirados, cancelar y reprogramar
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Pantalla del cliente para gestionar sus turnos. Se divide en:
+// - Pendientes: próximos turnos. Permite cancelar o reprogramar SI
+//   faltan > 24 hs (regla validada por canCancelBooking + backend).
+// - Expirados: turnos que ya pasaron (estado lógico 'expired').
+//
+// FLUJO DE REPROGRAMACIÓN:
+// 1. Cliente toca "Reprogramar" en un turno → setRescheduleFor(id)
+// 2. Abre panel con Calendario (rango hoy→+30). Al elegir día:
+//    getDayFreeSlots() calcula slots libres para ese barbero ese día
+// 3. Elige nuevo horario (chip) → setRescheduleTime
+// 4. Confirma → onReschedule(id, nuevaFecha, nuevaHora) (App.jsx hace PATCH /turnos/:id)
+// 5. Se cierra panel y se refrescan turnos/disponibilidad
+//
+// Regla de cancelación: canCancelBooking usa parseBookingDateTime + >24h.
+// También backend la exige (no se puede burlar por API).
 import { useState } from 'react';
 import Calendario from './Calendario';
 import PieDePagina from '../comunes/PieDePagina';
@@ -7,6 +26,9 @@ import { formatCountdown, getDayFreeSlots, getWeekdayPattern } from '../../utili
 const isClosedDay = (ds) => !getWeekdayPattern(new Date(`${ds}T00:00:00`));
 function MisTurnos({ calendarMax, calendarMin, canCancelBooking, currentUser, dateBlockouts, expiredBookings, horarioLaboral, onBack, onCancelBooking, onReschedule, pendingBookings, takenSlots, timeSlots }) {
   // ── Estado de reprogramación ──────────────────────
+  // rescheduleFor: idTurno que está reprogramando ('') = ninguno
+  // rescheduleDate: 'YYYY-MM-DD' elegido
+  // rescheduleTime: 'HH:MM' elegido
   const [rescheduleFor, setRescheduleFor] = useState('');
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleTime, setRescheduleTime] = useState('');

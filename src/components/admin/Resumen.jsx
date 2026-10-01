@@ -1,4 +1,17 @@
-// ── Panel de resumen operativo (estados de turnos) ───
+// ═══════════════════════════════════════════════════════════════════
+// RESUMEN OPERATIVO (admin) — tarjetas de conteo por estado
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Es la pestaña "Resumen": un tablero de solo lectura con un contador por
+// estado de turno. NO calcula nada: App.jsx ya hizo el conteo en `statusCount`
+// (un objeto { pending: n, confirmed: n, completed: n, ... }) y le pasa las
+// opciones (`bookingStatusOptions`) para iterar en el mismo orden que el
+// <select> del panel Turnos.
+//
+// Solo renderiza: una <div className="admin-status-card"> por estado con su
+// etiqueta y la cantidad ("N turnos"). El texto largo sirve de guía para
+// saber qué se puede administrar desde las otras pestañas.
 function Resumen({ bookingStatusOptions, statusCount }) {
   return (
     <article className="simple-card admin-panel">

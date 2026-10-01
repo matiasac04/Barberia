@@ -1,24 +1,42 @@
 // ═══════════════════════════════════════════════════════════════════
 // App.jsx — EL CORAZÓN DE LA APLICACIÓN (estado global + orquestador)
 // ═══════════════════════════════════════════════════════════════════
-// Este archivo es el "cerebro" de toda la SPA de la barbería:
-//   1. Guarda TODO el estado de la app en un solo lugar (estado global):
-//      sesión, profesionales, servicios, turnos, disponibilidad, etc.
-//   2. Hace todas las llamadas a la API (fetch al backend Express).
-//   3. Decide qué pantalla mostrar según quién haya iniciado sesión:
+// ¿CÓMO FUNCIONA ESTE ARCHIVO?
+//
+// Este componente es el "cerebro" de toda la SPA. Su trabajo es:
+//   1. CENTRALIZAR EL ESTADO: guarda TODO lo que necesita la app en un
+//      único lugar (sesión, catálogos, selección del turnero, turnos,
+//      disponibilidad, bloqueos y horarios). Así todos los componentes
+//      ven la misma información y se mantienen sincronizados.
+//   2. ORQUESTAR LAS PETICIONES: concentra todas las llamadas al backend
+//      (a través de src/servicios/api.js). Decide CUÁNDO pedir datos,
+//      QUÉ pedir y QUÉ hacer cuando llegan o fallan.
+//   3. CONTROLAR EL FLUJO DE PANTALLAS: según el usuario logueado
+//      (role: 'admin' o 'client') decide qué vista renderizar:
 //      - admin  → Panel de administración (components/admin/Admin.jsx)
 //      - client → Turnero para reservar (components/cliente/Inicio.jsx)
 //                 o "Mis turnos" (components/cliente/MisTurnos.jsx)
-//   4. Pasa los datos y las funciones a los componentes hijos mediante
-//      "props" (prop-drilling: no usa Redux ni Context, todo baja de acá).
+//      - sin sesión → Pantalla de login/registro (IniciarSesion.jsx)
+//   4. PASAR DATOS POR PROPS: baja estado y funciones a los hijos
+//      (prop-drilling). No usa Context/Redux a propósito: el flujo es
+//      unidireccional y fácil de seguir para este tamaño de app.
 //
-// FLUJO DE DATOS:  App.jsx → src/servicios/api.js (fetch)
-//                → servidor Express (server/) → SQL Server (en la nube)
+// FLUJO DE DATOS (cómo viaja la información):
+//   UI (componentes) → App.jsx (handlers/estado)
+//                    → src/servicios/api.js (peticion/fetch)
+//                    → Backend Express (server/index.js + rutas)
+//                    → SQL Server (BD)
+//                    ← respuesta JSON ← vuelve por el mismo camino ← actualiza estado ← re-renderiza UI
 //
-// REGLAS DE NEGOCIO CLAVE (definidas acá y en src/utilidades/ayudantes.js):
-//   - Domingos y lunes CERRADOS.
-//   - Solo se reserva desde HOY hasta +30 DÍAS.
-//   - Slots de 30 min según el horario laboral (o horario fijo de respaldo).
+// REGLAS DE NEGOCIO (aplicadas aquí + en ayudantes.js):
+//   - Domingos (0) y lunes (1): DÍAS CERRADOS (isBlockedWeekday).
+//   - Ventana de reservas: ÚNICAMENTE desde HOY (00:00) hasta HOY + 30 DÍAS (23:59:59).
+//   - Turnos de 30 minutos. Los slots disponibles salen del HorarioLaboral
+//     del profesional (DB). Si NO tiene horario cargado, usa timeSlots
+//     de respaldo (src/datos/semilla.js).
+//   - Disponibilidad = slots del día − (turnos ocupados + bloqueos puntuales/día completo).
+//   - Cancelaciones/reprogramaciones cliente: requieren > 24 hs de antelación
+//     (validado también en backend para que no se salteen por API).
 // ═══════════════════════════════════════════════════════════════════
 
 // ── Imports ──────────────────────────────────────────

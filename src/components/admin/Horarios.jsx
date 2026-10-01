@@ -1,8 +1,33 @@
-// ── Panel de horarios y bloqueos (semanal + puntual) ──
+// ═══════════════════════════════════════════════════════════════════
+// PANEL DE HORARIOS Y BLOQUEOS (admin)
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Maneja DOS FACETAS del horario, ambas por profesional seleccionado:
+//
+// A) HORARIO SEMANAL (tabla HorarioLaboral):
+//    - Para cada día laboral (mar–sáb) permite hasta 2 bloques
+//      (ej. mañana 09:00–12:00 / tarde 15:00–17:00)
+//    - Checkbox por día lo activa/desactiva (off = descanso, NO guarda filas)
+//    - buildWeeklyForm() transforma las filas de la DB en el estado del form
+//    - guardarSemanal() valida cada bloque (entrada<salida, completos),
+//      arma la lista de horarios y llama onSaveHorarios (App → PUT /profesionales/:id/horarios)
+//    - Si no hay filas para un día, ese día queda 'off'
+//
+// B) BLOQUEOS PUNTUALES (tabla BloqueoHorario):
+//    - Elegí una fecha (hoy→+30). Si es domingo/lunes avisa que está cerrado.
+//    - toggleDia() bloquea/desbloquea TODO el día (guarda hora=NULL)
+//    - toggleSlot() bloquea/libera un horario puntual (guarda la hora)
+//    - editar() llama onSaveDateBlockouts (App → POST /profesionales/:id/bloqueos)
+//      que REEMPLAZA los bloqueos de esa fecha.
+//
+// Impacto en el turno: los slots bloqueos + fuera de horario NO aparecen
+// disponibles en Inicio.jsx (getDayFreeSlots filtra).
 import { useEffect, useState } from 'react';
 import { WORKING_DAYS, getDateBlockedSlots, getWeekdayPattern, getWeeklySlots, toIsoDate } from '../../utilidades/ayudantes';
 
 // ── Constantes de fechas y días laborales ────────────
+// Rango para el input de fecha de bloqueo puntual: hoy → +30 días
 const today = new Date();
 const minIso = toIsoDate(today);
 const maxDate = new Date(today); maxDate.setDate(maxDate.getDate() + 30);

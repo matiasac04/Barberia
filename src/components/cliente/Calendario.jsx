@@ -1,10 +1,32 @@
-// ── Calendario mensual para elegir fecha de turno ─────
+// ═══════════════════════════════════════════════════════════════════
+// CALENDARIO MENSUAL (selector de fecha para reservar)
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Muestra un grid mensual para que el cliente elija el día del turno.
+// Calcula qué días están dentro del rango [minDate, maxDate] (hoy → +30),
+// pinta el estado por color/etiqueta (libre/parcial/lleno/cerrado) según
+// cuántos slots libres tiene ese día (getFreeCount) y evita seleccionar
+// domingos/lunes o fuera de rango.
+//
+// FLUJO:
+// 1. Recibe selectedDate ('YYYY-MM-DD'), minDate, maxDate, totalSlots y getFreeCount(ds)
+// 2. view = primer día del mes visible (inicializa con selectedDate)
+// 3. Calcula leadingBlanks (para alinear con día de semana Lun–Dom)
+// 4. Genera celdas (vacías + días del mes)
+// 5. Por cada día: calcula si está en rango, pide freeCount, decide clase/etiqueta
+// 6. Al click: valida inRange y llama onSelectDate(dateIso)
+//
+// Etiquetas: Libre (freeCount==totalSlots), Parcial (0<freeCount<totalSlots),
+// Lleno (0), Cerrado (null = domingo/lunes o sin slots)
 import { useState } from 'react';
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+// toLocalIso: convierte Date a 'YYYY-MM-DD' sin problemas de TZ (usa componentes locales)
 const toLocalIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 function Calendario({ getFreeCount, maxDate, minDate, onSelectDate, selectedDate, totalSlots }) {
   // ── Estado y cálculo del mes visible ──────────────
+  // view = Date del 1er día del mes que se está mostrando
   const [view, setView] = useState(() => { const a = new Date(`${selectedDate}T00:00:00`); return new Date(a.getFullYear(), a.getMonth(), 1); });
   const monthStart = new Date(view.getFullYear(), view.getMonth(), 1);
   const leadingBlanks = (monthStart.getDay() + 6) % 7;

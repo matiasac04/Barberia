@@ -1,4 +1,21 @@
-// ── Panel de turnos admin (editar y eliminar turnos) ──
+// ═══════════════════════════════════════════════════════════════════
+// PANEL DE TURNOS (admin) — editar y eliminar cualquier turno
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Permite al admin corregir cualquier turno de la base:
+// 1. Lista TODOS los turnos (los recibe de App.jsx como `bookings`).
+//    Cada fila muestra cliente, barbero, servicio, fecha/hora y estado.
+// 2. Botón "Editar" → onStartEditBooking(b) carga ese turno en el
+//    formulario de arriba (App.jsx guarda bookingForm).
+// 3. El <form> permite cambiar cliente, barbero, servicio, fecha, hora
+//    y estado. Al enviar → onBookingSubmit → App hace PATCH /turnos/:id.
+// 4. Botón "Eliminar" → onDeleteBooking(id) borra el registro (DELETE).
+//
+// NOTA: este panel NO muestra el estado 'expired' como editable; los
+// estados disponibles en el select son pending/confirmed/completed/
+// no-show/cancelled (los que el backend mapea a los valores de la DB).
+// selectedBooking es el turno cargado en el formulario (App.jsx).
 const bookingStatusLabels = { pending: 'Pendiente', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'No se presentó', cancelled: 'Cancelado', expired: 'Expirado' };
 function Turnos({ barbers, bookingForm, bookingStatusOptions, bookings, onBookingFormChange, onBookingSubmit, onDeleteBooking, onStartEditBooking, services, selectedBooking }) {
   return (

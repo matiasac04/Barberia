@@ -1,15 +1,25 @@
-// ── Datos de semilla (fallback de arranque de la app) ──
-// La fuente de verdad de la app es la base de datos (SQL Server).
-// Este archivo solo es un "respaldo" para que la app tenga algo
-// con qué pintar si la DB no devuelve información.
-
-// timeSlots: lista de horarios fijos que se usa como "plan B".
-// Cuando un profesional NO tiene horario laboral cargado en la DB
-// (tabla HorarioLaboral), se usan estos horarios para mostrar
-// los turnos disponibles en el calendario.
+// ═══════════════════════════════════════════════════════════════════
+// DATOS SEMILLA — respaldo para arrancar la app
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
 //
-//   Mañana: 09:00 a 12:00  (turnos de 30 minutos)
-//   Almuerzo (break): 12:30 a 14:30 no aparece porque cierra la barbería
-//   Tarde: 15:00 a 17:00
-// Cada hora 'HH:MM' es un horario de inicio posible de turno.
+// La fuente de verdad de esta app es la BASE DE DATOS (SQL Server), no este
+// archivo. Ojo: los catálogos (profesionales, servicios) NO están acá a
+// propósito — si el admin agrega un servicio, tiene que aparecer sin tocar
+// código. Solo se guarda acá el dato que no viene de ninguna tabla: el
+// HORARIO FIJO DE RESPALDO.
+//
+// QUÉ ES UN "FALLBACK": cuando un profesional NO tiene horario cargado en la
+// tabla HorarioLaboral (o la tabla está vacía porque el admin todavía no
+// la configuró), la app necesita igual una lista de horarios para pintar el
+// calendario. Si no, el turnoero saldría sin ningún horario y nadie podría
+// reservar. timeSlots cumple esa función.
+//
+// DÓNDE SE USA: App.jsx y Horarios.jsx lo pasan como 4º parámetro a
+// getWeeklySlots(), que hace: "si hay filas en HorarioLaboral para ese
+// profesional y ese día, uso esas; si no hay, uso estos timeSlots".
+//
+// CÓMO SE USA EL ALMUERZO: no aparece ningún slot entre las 12:30 y las 15:00
+// porque esa franja NO está en la lista. El break no necesita código extra:
+// simplemente no hay horarios en ese rango.
 export const timeSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '15:00', '15:30', '16:00', '16:30', '17:00']
