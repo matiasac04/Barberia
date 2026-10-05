@@ -1,26 +1,4 @@
 <!doctype html>
-<!--
-  index.html — el ÚNICO archivo HTML de la app (Vite es una SPA: no hay
-  otras páginas, todo se renderiza con React dentro de #root).
-
-  ¿CÓMO FUNCIONA?
-  Al abrir la app, el navegador lee este HTML, que está VACÍO de contenido
-  real: solo tiene un <div id="root"></div> vacío. Después el <script>
-  carga main.jsx, que es quien mete toda la interfaz adentro con React.
-
-  Lo que hay en el <head> son metadatos para el navegador y los buscadores:
-  - <meta charset>           → interpreta bien los acentos (español rioplatense)
-  - viewport                 → que se vea bien en celular (sin zoom forzado)
-  - description / title      → cómo aparece la app en Google y en la pestaña
-  - theme-color              → el color de la barra del navegador en Android
-  - preconnect + Google Fonts → carga las tipografías (Outfit y Playfair
-                               Display). El preconnect abre la conexión antes
-                               de pedir la fuente, para que aparezca más rápido.
-  - <link rel="icon">        → el ícono de la pestaña (favicon.png)
-
-  OJO: React se encarga del <body>. No se escribe HTML de la app acá; todo
-  vive en los componentes JSX.
--->
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
@@ -37,7 +15,37 @@
     <title>Qué cortecito · Turnero</title>
   </head>
   <body>
-    <!-- Punto de montaje: React reemplaza este div vacío por toda la app. -->
+    <!--
+      Este comentario va ACÁ, adentro del body, y NO arriba del todo del archivo.
+      NO LO MUEVAS DE NUEVO ARRIBA: Vite inyecta su preamble de React Fast Refresh
+      entre el <!doctype html> y el <html> (alrededor del char 500). Si este
+      bloque estuviera en ese lugar, el navegador leería el preamble como texto
+      de comentario y no lo ejecutaría: quedaría sin
+      window.$RefreshReg$, cada .jsx tiraría "can't detect preamble", React no
+      montaría nada y la app se vería completamente en negro.
+
+      ────────────────────────────────────────────────────────────────
+      index.html — el ÚNICO archivo HTML de la app (Vite es una SPA: no hay
+      otras páginas, todo se renderiza con React dentro de #root).
+
+      ¿CÓMO FUNCIONA?
+      El navegador lee este HTML, que está VACÍO de contenido real: solo tiene
+      un div vacío con id "root". Después el script de tipo module carga
+      main.jsx, que es quien mete toda la interfaz adentro con React.
+
+      Lo que hay en el head son metadatos para el navegador y los buscadores:
+      - meta charset           → interpreta bien los acentos (español rioplatense)
+      - viewport               → que se vea bien en celular (sin zoom forzado)
+      - description / title    → cómo aparece la app en Google y en la pestaña
+      - theme-color            → el color de la barra del navegador en Android
+      - preconnect + tipografías → carga Outfit y Playfair Display; el preconnect
+                                 abre la conexión antes de pedir la fuente, para
+                                 que aparezcan más rápido.
+      - link rel="icon"        → el ícono de la pestaña (favicon.png)
+
+      OJO: React se encarga del body. No se escribe HTML de la app acá; todo
+      vive en los componentes JSX.
+    -->
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
