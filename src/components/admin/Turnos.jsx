@@ -13,11 +13,12 @@
 // 4. Botón "Eliminar" → onDeleteBooking(id) borra el registro (DELETE).
 //
 // NOTA: este panel NO muestra el estado 'expired' como editable; los
-// estados disponibles en el select son pending/confirmed/completed/
-// no-show/cancelled (los que el backend mapea a los valores de la DB).
-// selectedBooking es el turno cargado en el formulario (App.jsx).
-const bookingStatusLabels = { pending: 'Pendiente', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'No se presentó', cancelled: 'Cancelado', expired: 'Expirado' };
-function Turnos({ barbers, bookingForm, bookingStatusOptions, bookings, onBookingFormChange, onBookingSubmit, onDeleteBooking, onStartEditBooking, services, selectedBooking }) {
+// estados disponibles en el select son los que el backend mapea a los valores
+// de la DB (Confirmado/Completado/NoSePresento/Cancelado). La etiqueta de cada
+// estado llega por prop `bookingStatusLabels` desde Admin.jsx, que es el único
+// lugar donde se definen: antes estaba duplicado acá y las dos copias ya no
+// coincidían ('Pendiente' en una, 'Confirmado' en la otra).
+function Turnos({ barbers, bookingForm, bookingStatusLabels, bookingStatusOptions, bookings, onBookingFormChange, onBookingSubmit, onDeleteBooking, onStartEditBooking, services, selectedBooking }) {
   return (
     <article className="simple-card admin-panel">
       <h2>Editar turnos</h2>

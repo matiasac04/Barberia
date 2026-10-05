@@ -14,7 +14,7 @@
       todo el proyecto con var(--nombre). Si mañana cambia el dorado de la
       barbería, se edita UNA línea y se actualiza toda la app.
       OJO: App.jsx las referencia desde JavaScript (por ejemplo
-      'var(--danger, #e05a4f)'), o sea que también son accesibles desde el código.
+      'var(--err)'), o sea que también son accesibles desde el código.
 
    Qué hay en cada grupo de variables:
    - --bg-0 / --bg-1  → fondos (el principal y uno más claro para cards)

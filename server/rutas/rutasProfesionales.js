@@ -5,7 +5,7 @@
 //
 // Este archivo maneja todo lo que define QUIÉN ATIENDE y CUÁNDO:
 //
-//   GET    /profesionales                    → lista (PÚBLICO)
+//   GET    /profesionales                    → lista (requiere token)
 //   POST   /profesionales                    → crea         (solo admin)
 //   DELETE /profesionales/:id                → da de baja   (solo admin)
 //   PATCH  /profesionales/:id                → edita        (solo admin)
@@ -54,7 +54,12 @@ const normalizarEmailOpcional = (email) => (email && String(email).trim() ? Stri
 // Con "1" → todos (lo usa el panel admin para poder reactivar bajas).
 // El SELECT arma el nombre completo con LTRIM/RTRIM para que no queden
 // espacios dobles cuando el apellido es NULL.
-router.get("/profesionales", async (req, res) => {
+//
+// Exige token (jwtMiddleware) porque la respuesta trae email y teléfono del
+// staff: sin pedirlo, cualquiera podría scrapear los datos de contacto de
+// todos los profesionales desde el navegador. No le hace falta al turnero sin
+// sesión: el frontend solo pide esta lista cuando ya está logueado.
+router.get("/profesionales", jwtMiddleware, async (req, res) => {
   try {
     const db = await getPool();
     const incluirInactivos = req.query.incluirInactivos === "1";

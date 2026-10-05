@@ -171,20 +171,22 @@ function App() {
   // componentes: { id, name, email, telefono } (viene como idProfesional,
   // nombre, etc. desde SQL Server).
   const cargarProfesionales = useCallback(async () => {
+    if (!token) return;
     try {
-      const p = await obtenerProfesionales();
+      const p = await obtenerProfesionales(token);
       if (Array.isArray(p) && p.length > 0) setBarbers(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '' })));
     } catch (error) { console.warn('No se pudieron obtener los profesionales:', error); }
-  }, []);
+  }, [token]);
 
   // Igual pero trae TODOS los profesionales (activos e inactivos) con su
   // flag `activo`. Lo usa el panel de admin para poder reactivar bajas.
   const cargarTodosProfesionales = useCallback(async () => {
+    if (!token) return;
     try {
-      const p = await obtenerProfesionales(true);
+      const p = await obtenerProfesionales(token, true);
       if (Array.isArray(p)) setAllBarbers(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '', activo: x.activo !== false })));
     } catch (error) { console.warn('No se pudieron obtener todos los profesionales:', error); }
-  }, []);
+  }, [token]);
 
   // Trae el catálogo de servicios y lo mapea a { id, name, price, durationMinutes }.
   const cargarServicios = useCallback(async () => {
@@ -219,7 +221,7 @@ function App() {
       if (resultado.status === 'rejected') { console.warn(`[carga inicial] Falló ${etiqueta}:`, resultado.reason); return null; }
       return resultado.value;
     };
-    Promise.allSettled([obtenerProfesionales(), obtenerProfesionales(true), obtenerServicios(), obtenerBloqueos(token), obtenerHorarios(token), obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd), token)])
+    Promise.allSettled([obtenerProfesionales(token), obtenerProfesionales(token, true), obtenerServicios(), obtenerBloqueos(token), obtenerHorarios(token), obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd), token)])
       .then(([rp, rpa, rs, rb, rh, ro]) => {
         if (cancelado) return;
         const fallidas = [];
@@ -249,15 +251,24 @@ function App() {
       .catch(() => {});
   }, [token]);
 
-  // SQL Server devuelve las horas como '10:30:00' (o '...T10:30:00Z').
-  // Esta función las deja en 'HH:MM' (ej. '10:30') para poder compararlas
-  // con los slots que maneja el frontend.
+  // SQL Server devuelve las horas como 'HH:MM' porque el backend las convierte
+  // con CONVERT(varchar(5), horaInicio, 108) en TODAS las consultas.
+  //
+  // OJO — esto es una trampa real: en crudo, tedious devuelve una columna TIME
+  // como un objeto Date de 1970-01-01 (NO como texto), y antes de que el
+  // backend hiciera el CONVERT, este normalize devolvía '' en silencio para
+  // todas las horas. Como abajo se hace `.filter(Boolean)`, la lista de
+  // ocupados quedaba VACÍA sin dar ningún error: el calendario pintaba todos
+  // los días "libre" y el cliente no podía cancelar ni reprogramar (porque
+  // canCancelBooking necesita la hora). Por eso, si algún día esto no puede
+  // normalizar, AVISA en vez de devolver '' en silencio.
   const normalizarHoraApi = useCallback((valor) => {
     if (!valor) return '';
     const s = String(valor).trim();
     const hhmmss = s.includes('T') ? s.split('T')[1].replace('Z', '') : s;
     const p = hhmmss.slice(0, 8).split(':');
-    return p[1] ? `${p[0].padStart(2, '0')}:${p[1].padStart(2, '0')}` : '';
+    if (!p[1]) { console.warn('[horaApi] No se pudo normalizar la hora que llegó del backend:', valor); return ''; }
+    return `${p[0].padStart(2, '0')}:${p[1].padStart(2, '0')}`;
   }, []);
 
   // Consulta a la API qué horas ya están ocupadas para la fecha + barbero
@@ -463,7 +474,15 @@ function App() {
   const occupancyCount = daySlots.length - availableSlots.length;  // cuántos slots del día están ocupados
   const currentUserEmail = currentUser?.email ?? '';
   // Turnos del cliente logueado = los confirmadoBookings que son SUYOS
-  const currentUserBookings = confirmedBookings.filter((b) => b.ownerEmail === currentUserEmail);
+  //
+  // OJO con el orden: la API los trae como `ORDER BY fecha DESC` (el más nuevo
+  // primero), y pendingBookings/expiredBookings heredan ese orden. Sin este
+  // sort, "el próximo turno" del banner era el MÁS LEJANO y la lista de
+  // pendientes salía al revés. Se ordena por fecha + hora ascendente.
+  const currentUserBookings = useMemo(
+    () => confirmedBookings.filter((b) => b.ownerEmail === currentUserEmail).slice().sort((l, r) => `${l.bookingDate}T${l.time}`.localeCompare(`${r.bookingDate}T${r.time}`)),
+    [confirmedBookings, currentUserEmail]
+  );
   // pending = próximos / expired = pasados (según resolveBookingStatus)
   const pendingBookings = currentUserBookings.filter((b) => b.status === 'pending');
   const expiredBookings = currentUserBookings.filter((b) => b.status === 'expired'); const nextBookings = pendingBookings.slice(0, 3);  // los 3 próximos para el banner
@@ -610,7 +629,10 @@ function App() {
         idServicio: updates.serviceId ? Number(updates.serviceId) : undefined,
         fecha: updates.bookingDate || undefined,
         horaInicio: updates.time || undefined,
-        estado: ['pending', 'confirmed', 'completed', 'no-show', 'cancelled'].includes(updates.status) ? updates.status : undefined,
+        // 'confirmed' ya no se manda: no es un estado real (ver bookingStatusOptions
+        // en Admin.jsx). Los valores válidos son los que mapea mapaEstado() del
+        // backend a las columnas de la DB.
+        estado: ['pending', 'completed', 'no-show', 'cancelled'].includes(updates.status) ? updates.status : undefined,
         nombreCliente: updates.customerName !== undefined ? updates.customerName : undefined,
         telefono: updates.customerPhone,
       }, token);
@@ -672,7 +694,7 @@ function App() {
   // request falló, mostramos cuál fue en vez de quedarnos girando en silencio.
   if (currentUser?.role !== 'admin' && (barbers.length === 0 || services.length === 0)) return (
     <main className="simple-page" style={{ display: 'grid', placeItems: 'center', minHeight: '100svh' }}>
-      <p style={{ color: errorCarga ? 'var(--danger, #e05a4f)' : 'var(--text-mid)' }}>{errorCarga || 'Cargando datos...'}</p>
+      <p style={{ color: errorCarga ? 'var(--err)' : 'var(--text-mid)' }}>{errorCarga || 'Cargando datos...'}</p>
     </main>
   );
   return (

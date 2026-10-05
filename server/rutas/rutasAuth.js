@@ -178,11 +178,17 @@ router.post("/login", async (req, res) => {
       { expiresIn: "1h" }
     );
 
+    // OJO: se responde con un objeto NUEVO, no con la fila que trajo el
+    // SELECT. La fila cruda incluye `password` (el hash de bcrypt) y mandarlo
+    // al navegador lo dejaría expuesto en el devtools y en cualquier
+    // interceptación de la respuesta. El frontend solo usa idCliente, nombre,
+    // apellido, telefono y email, así que se devuelven solo esos.
+    const { idCliente, nombre, apellido, telefono } = clienteLogueado;
     res.json({
       mensaje: "Login exitoso.",
       role: "client",
       token: token,
-      cliente: clienteLogueado
+      cliente: { idCliente, nombre, apellido, telefono, email: String(userOrEmail).trim().toLowerCase() }
     });
   } catch (error) {
     console.error(error);
