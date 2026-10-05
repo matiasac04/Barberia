@@ -524,6 +524,18 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       }
     }
 
+    // ¿El destino está ocupado por OTRO turno? (idTurno <> @id excluye este
+    // mismo turno, que si no siempre se chocaría consigo mismo).
+    const ocupado = await db.request()
+      .input("idProfesional", sql.Int, profFinal)
+      .input("fecha", sql.Date, fechaFinal)
+      .input("horaInicio", sql.VarChar, horaFinal)
+      .input("id", sql.Int, req.params.id)
+      .query("SELECT idTurno FROM Turno WHERE idProfesional = @idProfesional AND fecha = @fecha AND horaInicio = @horaInicio AND idTurno <> @id AND (estado IS NULL OR estado <> 'Cancelado')");
+    if (ocupado.recordset.length > 0) {
+      return res.status(409).json({ error: "Ese horario ya fue reservado para ese profesional. Elegí otro horario disponible." });
+    }
+
     // Arranca la transacción: desde acá, todo o nada.
     // SERIALIZABLE (no el default READ COMMITTED) porque el chequeo de
     // ocupación tiene que insepararse del UPDATE. Si el SELECT va afuera,
