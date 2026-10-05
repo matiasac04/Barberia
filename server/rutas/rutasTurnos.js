@@ -524,24 +524,21 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       }
     }
 
-    // ¿El destino está ocupado por OTRO turno? (idTurno <> @id excluye este
-    // mismo turno, que si no siempre se chocaría consigo mismo).
-    const ocupado = await db.request()
-      .input("idProfesional", sql.Int, profFinal)
-      .input("fecha", sql.Date, fechaFinal)
-      .input("horaInicio", sql.VarChar, horaFinal)
-      .input("id", sql.Int, req.params.id)
-      .query("SELECT idTurno FROM Turno WHERE idProfesional = @idProfesional AND fecha = @fecha AND horaInicio = @horaInicio AND idTurno <> @id AND (estado IS NULL OR estado <> 'Cancelado')");
-    if (ocupado.recordset.length > 0) {
-      return res.status(409).json({ error: "Ese horario ya fue reservado para ese profesional. Elegí otro horario disponible." });
-    }
-
     // Arranca la transacción: desde acá, todo o nada.
     // SERIALIZABLE (no el default READ COMMITTED) porque el chequeo de
     // ocupación tiene que insepararse del UPDATE. Si el SELECT va afuera,
     // entre que responde y se escribe el UPDATE se cuela otra request que
     // pueda reservar o reprogramar al mismo horario, y las dos escriben.
     // Es el mismo motivo y el mismo nivel que ya usa POST /turnos.
+    //
+    // OJO: acá NO debe quedar un chequeo de ocupación con db.request() antes
+    // del begin. Ya hubo un merge (b5ae99d) que lo reintrodujo desde la rama
+    // remota: como base y los dos lados "agregaban" el chequeo en lugares
+    // distintos (adentro de la transacción acá, afuera en el remoto), Git no
+    // pudo resolver que era un movimiento y dejó los dos. El de afuera hace
+    // return 409 antes de abrir la transacción, o sea que la carrera seguía
+    // existiendo y el chequeo de adentro nunca llegaba a correr. El chequeo
+    // válido es el de adentro, unas líneas más abajo.
     const transaction = new sql.Transaction(db);
     await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
     try {
