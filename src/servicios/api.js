@@ -60,7 +60,8 @@ export const verificarToken = (token) => peticion("/verificar", { token });
 // ── Profesionales ─────────────────────────────────────
 // obtenerProfesionales: lista activa para el turnero; con incluirInactivos=true
 // trae también los que están de baja (para el panel de admin).
-export const obtenerProfesionales = (incluirInactivos = false) => peticion(`/profesionales${incluirInactivos ? "?incluirInactivos=1" : ""}`);
+// Pide token porque el endpoint devuelve email y teléfono del staff.
+export const obtenerProfesionales = (token, incluirInactivos = false) => peticion(`/profesionales${incluirInactivos ? "?incluirInactivos=1" : ""}`, { token });
 // Las acciones de crear/actualizar/eliminar requieren token de admin.
 export const crearProfesional = (datos, token) => peticion("/profesionales", { method: "POST", token, body: datos });
 export const actualizarProfesional = (id, datos, token) => peticion(`/profesionales/${id}`, { method: "PATCH", token, body: datos });

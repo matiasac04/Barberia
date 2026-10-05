@@ -5,9 +5,13 @@
 //
 // Es la pestaña "Resumen": un tablero de solo lectura con un contador por
 // estado de turno. NO calcula nada: App.jsx ya hizo el conteo en `statusCount`
-// (un objeto { pending: n, confirmed: n, completed: n, ... }) y le pasa las
-// opciones (`bookingStatusOptions`) para iterar en el mismo orden que el
-// <select> del panel Turnos.
+// (un objeto { pending: n, completed: n, 'no-show': n, cancelled: n, expired: n })
+// y le pasa las opciones (`bookingStatusOptions`) para iterar en el mismo orden
+// que el <select> del panel Turnos.
+//
+// OJO: 'expired' se cuenta pero no aparece en bookingStatusOptions, así que no
+// se muestra una tarjeta para él. Antes existía un estado 'confirmed' que
+// resolveBookingStatus nunca devolvía y por eso esa tarjeta valía 0 siempre.
 //
 // Solo renderiza: una <div className="admin-status-card"> por estado con su
 // etiqueta y la cantidad ("N turnos"). El texto largo sirve de guía para

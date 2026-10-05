@@ -52,18 +52,22 @@ CREATE TABLE Turno (
     horaFin AS DATEADD(minute, duracionReal, horaInicio),
     precioTotal DECIMAL(10, 2),
     telefono VARCHAR(20),
-    estado VARCHAR(20) DEFAULT 'Confirmado',
+    estado VARCHAR(20) DEFAULT 'Confirmado'
 );
 
 CREATE TABLE BloqueoHorario (
     idBloqueo      INT IDENTITY(1,1) PRIMARY KEY,
     idProfesional  INT REFERENCES Profesional(idProfesional),
     fecha          DATE,
-    hora           VARCHAR(5),
+    hora           VARCHAR(5)
 );
 
 
-
+-- ── Datos iniciales ───────────────────────────────────
+-- Usuario admin: admin / 123
+-- OJO: la contraseña '123' va en texto plano a propósito (es un seed de
+-- desarrollo y así lo pide el proyecto). Si esta base llegara a estar
+-- publicada, cambiá la clave.
 insert into Administrador
 values('admin','123','admin','admin','admin@gmail.com')
 

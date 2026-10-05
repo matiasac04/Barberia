@@ -30,11 +30,21 @@ import Horarios from './Horarios';
 import Servicios from './Servicios';
 
 // ── Constantes de formularios y opciones ──────────────
-// Etiquetas de estado (para mostrar en listas)
+// Etiquetas de estados (para mostrar en listas)
 // Opciones de estado (para el <select> del formulario de turno)
-const bookingStatusLabels = { pending: 'Pendiente', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'No se presentó', cancelled: 'Cancelado', expired: 'Expirado' };
+//
+// OJO: NO existe un estado 'confirmed'. resolveBookingStatus (ayudantes.js)
+// solo puede devolver 'cancelled' | 'completed' | 'no-show' | 'expired' |
+// 'pending'. Un turno confirmado y futuro es 'pending'; si ya pasó la hora,
+// 'expired'. Antes había una opción 'confirmed' acá que NUNCA se producía, así
+// que la tarjeta "Confirmado" del Resumen mostraba siempre 0 y
+// "Turnos activos" era en realidad solo "pendientes". Por eso el estado que
+// llega de la DB como 'Confirmado' se etiqueta 'Confirmado' (que es lo que dice
+// la base) y el mapa de estados del backend manda 'pending' y 'confirmed' al
+// mismo valor de la DB.
+const bookingStatusLabels = { pending: 'Confirmado', completed: 'Completado', 'no-show': 'No se presentó', cancelled: 'Cancelado', expired: 'Expirado' };
 const bookingStatusOptions = [
-  { value: 'pending', label: 'Pendiente' }, { value: 'confirmed', label: 'Confirmado' },
+  { value: 'pending', label: 'Confirmado' },
   { value: 'completed', label: 'Completado' }, { value: 'no-show', label: 'No se presentó' }, { value: 'cancelled', label: 'Cancelado' },
 ];
 const tabOptions = [
@@ -66,7 +76,7 @@ function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, erro
     bookings.filter((b) => b.status !== 'cancelled').slice().sort((l, r) => `${l.bookingDate}T${l.time}`.localeCompare(`${r.bookingDate}T${r.time}`)).forEach((b) => { const e = g.get(b.bookingDate) ?? []; e.push(b); g.set(b.bookingDate, e); });
     return [...g.entries()];
   }, [bookings]);
-  const statusCount = useMemo(() => bookings.reduce((a, b) => { a[b.status] = (a[b.status] ?? 0) + 1; return a; }, { pending: 0, confirmed: 0, completed: 0, 'no-show': 0, cancelled: 0 }), [bookings]);
+  const statusCount = useMemo(() => bookings.reduce((a, b) => { a[b.status] = (a[b.status] ?? 0) + 1; return a; }, { pending: 0, completed: 0, 'no-show': 0, cancelled: 0, expired: 0 }), [bookings]);
   // ── Handlers de formularios ───────────────────────
   const handleBarberSubmit = async (e) => {
     e.preventDefault();
@@ -111,7 +121,7 @@ function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, erro
       <section className="simple-card admin-summary">
         <div><strong>{barbers.length}</strong><span>Profesionales</span></div>
         <div><strong>{services.length}</strong><span>Servicios</span></div>
-        <div><strong>{statusCount.pending + statusCount.confirmed}</strong><span>Turnos activos</span></div>
+        <div><strong>{statusCount.pending}</strong><span>Turnos activos</span></div>
         <div><strong>{statusCount.completed + statusCount['no-show']}</strong><span>Histórico</span></div>
       </section>
       {/* El panel se dibuja siempre (si no, el admin no podría ni crear el
@@ -126,7 +136,7 @@ function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, erro
         {activeTab === 'professionals' && <Profesionales allBarbers={allBarbers} barberForm={barberForm} barbers={barbers} emptyBarberForm={emptyBarberForm} onBarberFormChange={setBarberForm} onBarberSubmit={handleBarberSubmit} onCancelBarberEdit={() => setBarberForm(emptyBarberForm)} onDeleteBarber={handleDeleteBarberClick} onStartEditBarber={startEditBarber} onToggleBarberActivo={onToggleBarberActivo} />}
         {activeTab === 'services' && <Servicios emptyServiceForm={emptyServiceForm} onCancelServiceEdit={() => setServiceForm(emptyServiceForm)} onDeleteService={handleDeleteServiceClick} onServiceFormChange={setServiceForm} onServiceSubmit={handleServiceSubmit} onStartEditService={startEditService} serviceForm={serviceForm} services={services} />}
         {activeTab === 'schedule' && <Horarios barbers={barbers} dateBlockouts={dateBlockouts} horarioLaboral={horarioLaboral} onSaveDateBlockouts={onSaveDateBlockouts} onSaveHorarios={onSaveHorarios} selectedScheduleBarber={selectedScheduleBarber} selectedScheduleDate={selectedScheduleDate} setSelectedScheduleBarber={setSelectedScheduleBarber} setSelectedScheduleDate={setSelectedScheduleDate} timeSlots={timeSlots} />}
-        {activeTab === 'bookings' && <Turnos barbers={barbers} bookingForm={bookingForm} bookingStatusOptions={bookingStatusOptions} bookings={bookings} onBookingFormChange={setBookingForm} onBookingSubmit={handleBookingSubmit} onDeleteBooking={onDeleteBooking} onStartEditBooking={startEditBooking} services={services} selectedBooking={selectedBooking} />}
+        {activeTab === 'bookings' && <Turnos barbers={barbers} bookingForm={bookingForm} bookingStatusLabels={bookingStatusLabels} bookingStatusOptions={bookingStatusOptions} bookings={bookings} onBookingFormChange={setBookingForm} onBookingSubmit={handleBookingSubmit} onDeleteBooking={onDeleteBooking} onStartEditBooking={startEditBooking} services={services} selectedBooking={selectedBooking} />}
         {activeTab === 'agenda' && <Agenda agendaGroups={agendaGroups} barbers={barbers} bookingStatusLabels={bookingStatusLabels} />}
       </section>
       <div className={`simple-feedback ${notice.type} admin-feedback`}>{notice.message}</div>

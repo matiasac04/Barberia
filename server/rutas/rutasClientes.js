@@ -16,8 +16,10 @@
 // LA CONSULTA:
 // JOIN con Profesional y Servicio para traer el nombre de cada uno (en vez de
 // solo los ids, que el frontend no sabría mostrar). CONVERT(varchar(10), ...)
-// pasa la fecha a texto 'YYYY-MM-DD' — importante por la zona horaria (ver
-// el comentario de timezone en rutasTurnos.js). Ordena por fecha descendente.
+// pasa la fecha a texto 'YYYY-MM-DD' y CONVERT(varchar(5), ..., 108) pasa la
+// hora a 'HH:MM' — importante por la zona horaria y por el tipo (ver el
+// comentario de timezone en rutasTurnos.js: en crudo, tedious devuelve un TIME
+// como objeto Date y el frontend no lo puede leer). Ordena por fecha descendente.
 const router = require("express").Router();
 
 const { sql, getPool } = require("../conexion");
@@ -35,7 +37,7 @@ router.get("/clientes/:idCliente/turnos", jwtMiddleware, async (req, res) => {
     const result = await db.request()
       .input("idCliente", sql.Int, req.params.idCliente)
       .query(`
-        SELECT t.idTurno, CONVERT(varchar(10), t.fecha, 23) AS fecha, t.horaInicio, t.estado, t.precioTotal, t.idProfesional,
+        SELECT t.idTurno, CONVERT(varchar(10), t.fecha, 23) AS fecha, CONVERT(varchar(5), t.horaInicio, 108) AS horaInicio, t.estado, t.precioTotal, t.idProfesional,
                p.nombre + ' ' + p.apellido AS profesional,
                s.nombre AS servicio
         FROM Turno t
