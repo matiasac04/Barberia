@@ -49,6 +49,7 @@ const router = require("express").Router();
 
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
+const { errorFecha, errorId } = require("../validaciones");
 
 // ── Regla de negocio: 24 h de antelación ─────────────
 // El frontend la aplica con canCancelBooking (src/utilidades/ayudantes.js),
@@ -159,13 +160,22 @@ const estaBloqueado = async (db, idProfesional, fecha, hora) => {
 // "libres" está en un solo lado (el frontend), no partida en dos.
 router.get("/turnos/disponibles", jwtMiddleware, async (req, res) => {
   const { fecha, idProfesional } = req.query;
+  // Se validan ANTES de tocar la base. Antes no se chequeaba nada: con
+  // fecha="no-es-fecha", "2026-13-45" o fecha="" el driver pasaba el string a
+  // un DATE de SQL, la comparación con una columna DATE no matcheaba y la query
+  // reventaba → la API respondía 500 "Error al consultar disponibilidad".
+  // Verificado: los tres casos devolvían 500.
+  const errFecha = errorFecha(fecha);
+  if (errFecha) return res.status(400).json({ error: errFecha });
+  const errId = errorId(idProfesional);
+  if (errId) return res.status(400).json({ error: errId });
   try {
     const db = await getPool();
     const ocupados = await db.request()
-      .input("idProfesional", sql.Int, idProfesional)
+      .input("idProfesional", sql.Int, Number(idProfesional))
       .input("fecha", sql.Date, fecha)
       .query("SELECT CONVERT(varchar(5), horaInicio, 108) AS horaInicio, CONVERT(varchar(5), horaFin, 108) AS horaFin FROM Turno WHERE idProfesional = @idProfesional AND fecha = @fecha AND (estado IS NULL OR estado <> 'Cancelado')");
-    res.json({ fecha, idProfesional, turnosOcupados: ocupados.recordset });
+    res.json({ fecha, idProfesional: Number(idProfesional), turnosOcupados: ocupados.recordset });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al consultar disponibilidad." });
@@ -178,6 +188,22 @@ router.get("/turnos/disponibles", jwtMiddleware, async (req, res) => {
 // consulta por cada día (serían 30 requests en vez de 1).
 router.get("/turnos/ocupados", jwtMiddleware, async (req, res) => {
   const { inicio, fin } = req.query;
+  // Misma validación que en /turnos/disponibles, por el mismo motivo.
+  const errInicio = errorFecha(inicio);
+  if (errInicio) return res.status(400).json({ error: `Parámetro "inicio": ${errInicio}` });
+  const errFin = errorFecha(fin);
+  if (errFin) return res.status(400).json({ error: `Parámetro "fin": ${errFin}` });
+  // Un rango al revés traería 0 filas y la app dibujaría el mes entero como
+  // libre, que es peor que un error: el cliente elige un slot ya tomado.
+  if (inicio > fin) {
+    return res.status(400).json({ error: 'El rango de fechas está invertido: "inicio" tiene que ser anterior a "fin".' });
+  }
+  // Y un rango acotado. Sin esto, un cliente puede pedir del año 1900 al 2999 y
+  // dumpingar la agenda histórica entera en una sola respuesta.
+  const dias = (new Date(`${fin}T00:00:00`) - new Date(`${inicio}T00:00:00`)) / 86400000;
+  if (dias > 93) {
+    return res.status(400).json({ error: "El rango es demasiado grande (máximo 3 meses)." });
+  }
   try {
     const db = await getPool();
     const ocupados = await db.request()
@@ -437,6 +463,16 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     if (estado !== undefined && req.user.role !== 'admin') {
       return res.status(403).json({ error: "Solo el administrador puede cambiar el estado de un turno." });
     }
+    // Y tiene que ser uno de los que el frontend manda. Antes se guardaba el
+    // string crudo si no coincidía con el mapa, y un estado inventado cuenta
+    // como "NO cancelado" en los cinco filtros `estado <> 'Cancelado'`: el
+    // slot quedaba bloqueado para siempre sin que nada lo explicara.
+    if (estado !== undefined) {
+      const mapaEstados = { pending: 'Confirmado', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'NoSePresento', cancelled: 'Cancelado' };
+      if (!Object.prototype.hasOwnProperty.call(mapaEstados, estado)) {
+        return res.status(400).json({ error: "El estado indicado no es válido." });
+      }
+    }
     // Reprogramar es tan "liberar el horario" como cancelar, así que lleva la
     // misma antelación de 24 h. Se mide sobre el turno ACTUAL (el que se está
     // por liberar), no sobre el nuevo: arrastrar un turno de la semana que
@@ -462,7 +498,11 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     // Para el chequeo de ocupación hay que resolver el destino FINAL:
     // si no viene profesional, se usa el actual; si no, idProfesional.
     const profFinal = idProfesional != null ? idProfesional : turnoActual.idProfesional;
-    const fechaFinal = fecha !== undefined ? fecha : turnoActual.fecha;
+    // OJO: se usa fechaIso (el 'YYYY-MM-DD' del SELECT de arriba), NO
+    // turnoActual.fecha (que viene como objeto Date de SQL Server). Pasarle el
+    // Date crudo a .input("fecha", sql.Date, ...) dependía de que el driver lo
+    // serializara bien; con fechaIso la comparación es inequívoca.
+    const fechaFinal = fecha !== undefined ? fecha : turnoActual.fechaIso;
     const horaFinal = horaInicio !== undefined ? normalizarHora(horaInicio) : turnoActual.horaIso;
 
     // Mismas dos validaciones que la reserva, para el cliente que reprograma:
@@ -484,22 +524,29 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       }
     }
 
-    // ¿El destino está ocupado por OTRO turno? (idTurno <> @id excluye este
-    // mismo turno, que si no siempre se chocaría consigo mismo).
-    const ocupado = await db.request()
-      .input("idProfesional", sql.Int, profFinal)
-      .input("fecha", sql.Date, fechaFinal)
-      .input("horaInicio", sql.VarChar, horaFinal)
-      .input("id", sql.Int, req.params.id)
-      .query("SELECT idTurno FROM Turno WHERE idProfesional = @idProfesional AND fecha = @fecha AND horaInicio = @horaInicio AND idTurno <> @id AND (estado IS NULL OR estado <> 'Cancelado')");
-    if (ocupado.recordset.length > 0) {
-      return res.status(409).json({ error: "Ese horario ya fue reservado para ese profesional. Elegí otro horario disponible." });
-    }
-
     // Arranca la transacción: desde acá, todo o nada.
+    // SERIALIZABLE (no el default READ COMMITTED) porque el chequeo de
+    // ocupación tiene que insepararse del UPDATE. Si el SELECT va afuera,
+    // entre que responde y se escribe el UPDATE se cuela otra request que
+    // pueda reservar o reprogramar al mismo horario, y las dos escriben.
+    // Es el mismo motivo y el mismo nivel que ya usa POST /turnos.
     const transaction = new sql.Transaction(db);
-    await transaction.begin();
+    await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
     try {
+      // --- Chequeo de ocupación, ADENTRO de la transacción ---
+      // idTurno <> @id excluye este mismo turno, que si no siempre se
+      // chocaría consigo mismo al reprogramlo a su propio horario.
+      const ocupado = await new sql.Request(transaction)
+        .input("idProfesional", sql.Int, profFinal)
+        .input("fecha", sql.Date, fechaFinal)
+        .input("horaInicio", sql.VarChar, horaFinal)
+        .input("id", sql.Int, req.params.id)
+        .query("SELECT idTurno FROM Turno WHERE idProfesional = @idProfesional AND fecha = @fecha AND horaInicio = @horaInicio AND idTurno <> @id AND (estado IS NULL OR estado <> 'Cancelado')");
+      if (ocupado.recordset.length > 0) {
+        await transaction.rollback();
+        return res.status(409).json({ error: "Ese horario ya fue reservado para ese profesional. Elegí otro horario disponible." });
+      }
+
       // --- Parte 1: UPDATE del turno (campos dinámicos) ---
       const set = [];
       const reqPatch = new sql.Request(transaction).input("id", sql.Int, req.params.id);
@@ -513,10 +560,11 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       if (estado !== undefined) {
         // Traduce el estado del frontend (inglés) al de la DB (español).
         // 'expired' no está: es un estado LÓGICO del frontend (turno que ya
-        // pasó), no algo que se guarde.
+        // pasó), no algo que se guarde. Ya se validó arriba que la clave
+        // existe, así que la traduzco directo.
         const mapaEstado = { pending: 'Confirmado', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'NoSePresento', cancelled: 'Cancelado' };
         set.push("estado = @estado");
-        reqPatch.input("estado", sql.VarChar, mapaEstado[estado] ?? String(estado));
+        reqPatch.input("estado", sql.VarChar, mapaEstado[estado]);
       }
       if (set.length > 0) await reqPatch.query(`UPDATE Turno SET ${set.join(", ")} WHERE idTurno = @id`);
 
@@ -542,7 +590,10 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       res.json({ mensaje: "Turno actualizado." });
     } catch (error) {
       // Algo falló → se deshace todo y el error sube al catch de afuera.
-      await transaction.rollback();
+      // El try/catch del rollback es a propósito: rollback() RECHAZA si la
+      // transacción ya fue abortada, y sin esto esa excepción tapaba el error
+      // real en el log (quedaba el TransactionError en vez de la causa).
+      try { await transaction.rollback(); } catch {}
       throw error;
     }
   } catch (error) {

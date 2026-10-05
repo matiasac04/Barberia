@@ -134,6 +134,11 @@ function App() {
   // Qué pedido de la carga inicial falló, para no quedar en "Cargando datos..."
   // para siempre sin explicar por qué. Vacío = todo cargó bien.
   const [errorCarga, setErrorCarga] = useState('');
+// Contador que se incrementa al pedir "reintentar". El efecto de carga inicial
+// lo tiene entre sus dependencias, así que basta con tocarlo para que vuelva a
+// pedir todo. Antes no había forma de reintentar: la pantalla de error solo
+// ofrecía cerrar sesión.
+const [intentoRecarga, setIntentoRecarga] = useState(0);
 
   // ── Sincronización de selección ───────────────────
   // Si el barbero o servicio seleccionado ya no existe en la lista
@@ -239,8 +244,8 @@ function App() {
         if (Array.isArray(o)) setBookedRange(o);
         setErrorCarga(fallidas.length ? `No se pudo cargar: ${fallidas.join(', ')}. Revisá que el backend esté corriendo.` : '');
       });
-    return () => { cancelado = true; };
-  }, [token]);
+return () => { cancelado = true; };
+    }, [token, intentoRecarga]);
 
   // Vuelve a pedir todos los turnos ocupados del mes entero. Se usa después
   // de reservar/cancelar/reprogramar para refrescar el calendario mensual.
@@ -422,15 +427,23 @@ function App() {
     } catch (error) { setAuthFeedback({ type: 'error', message: error.message || 'Credenciales incorrectas.' }); }
   };
 
-  // ⚠️ "Continuar con Google" es SOLO un mock de prueba: crea un usuario
-  // falso (sin idCliente en la DB) con un token inválido 'mock-google'.
-  // Ese usuario NO puede reservar turnos (ver handleSubmit, valida idCliente).
+  // ⚠️ "Continuar con Google" es SOLO un mock de prueba, NO el login real de
+  // Google (ese código está en la rama respaldo-google, a la espera de que se
+  // configure un GOOGLE_CLIENT_ID). El mock crea un usuario sin idCliente con
+  // un token inválido 'mock-google'.
+  //
+  // OJO con por qué NO se deja "funcionando" a medias: antes guardaba ese token
+  // en localStorage y ponía al usuario en sesión. Como el backend no reconoce
+  // el token, sus 6 requests de carga inicial devolvían 401, la app caía en la
+  // pantalla de error y ahí se quedaba encerrado (esa pantalla no tenía ni
+  // cerrar sesión). Ahora avisamos en vez de simular una sesión que no existe:
+  // el mock queda para probar la UI sin loguearse de verdad.
   const handleGoogleLogin = () => {
-    const mock = { idCliente: null, name: 'Cliente Prueba', email: 'cliente.prueba@gmail.com', role: 'client', phone: '', provider: 'google' };
-    const t = 'mock-google';
-    setToken(t); setCurrentUser(mock); setMainView('client'); setAuthScreen('login');
-    try { localStorage.setItem('token', t); localStorage.setItem('currentUser', JSON.stringify(mock)); } catch {}
-    setAuthFeedback({ type: 'success', message: 'Sesión iniciada con Google (modo prueba).' });
+    setAuthScreen('login');
+    setAuthFeedback({
+      type: 'error',
+      message: 'El acceso con Google todavía no está habilitado. Iniciá sesión con tu mail y contraseña, o registrate.',
+    });
   };
 
   // Registro: crea la cuenta en la DB (POST /registro), vuelve a la pantalla
@@ -438,6 +451,10 @@ function App() {
   const handleRegisterSubmit = async (event) => {
     event.preventDefault(); const { firstName, lastName, email, password, whatsapp } = registerForm;
     if (!firstName.trim() || !lastName.trim() || !email.trim() || !password.trim() || !whatsapp.trim()) { setAuthFeedback({ type: 'error', message: 'Completá nombre, apellido, mail, contraseña y whatsapp para registrarte.' }); return; }
+    // El mismo mínimo de 8 que valida el server (server/validaciones.js).
+    // Va del lado del cliente para no gastar un request y para que el mensaje
+    // salga en la voz de la app y no en el del navegador.
+    if (password.length < 8) { setAuthFeedback({ type: 'error', message: 'La contraseña tiene que tener al menos 8 caracteres.' }); return; }
     try {
       setAuthFeedback({ type: 'idle', message: 'Creando tu cuenta...' });
       await registrarCliente({ nombre: firstName.trim(), apellido: lastName.trim(), email: email.trim(), telefono: whatsapp.trim(), password });
@@ -692,9 +709,43 @@ function App() {
   // Mientras no lleguen los profesionales y servicios, mostramos un loading
   // (así el turnero no aparece vacío/roto en el primer render). Si alguna
   // request falló, mostramos cuál fue en vez de quedarnos girando en silencio.
+  //
+  // OJO: esta pantalla TIENE que ofrecer salida. Antes renderizaba solo un <p>
+  // con el error: sin cabecera, sin botón de cerrar sesión, sin reintentar.
+  // El que caía acá quedaba atrapado y lo único que le funcionaba era borrar
+  // el localStorage a mano desde la consola del navegador. Peor: el login mock
+  // de Google (handleGoogleLogin) guarda un token que el backend no reconoce,
+  // así que sus 6 requests dan 401 y caenan acá para siempre.
   if (currentUser?.role !== 'admin' && (barbers.length === 0 || services.length === 0)) return (
-    <main className="simple-page" style={{ display: 'grid', placeItems: 'center', minHeight: '100svh' }}>
-      <p style={{ color: errorCarga ? 'var(--err)' : 'var(--text-mid)' }}>{errorCarga || 'Cargando datos...'}</p>
+    <main className="simple-page" style={{ display: 'grid', placeItems: 'center', alignContent: 'center', gap: '1.5rem', minHeight: '100svh', textAlign: 'center' }}>
+      <div style={{ display: 'grid', gap: '0.65rem', maxWidth: '34rem' }}>
+        <p role="alert" style={{ color: errorCarga ? 'var(--err)' : 'var(--text-mid)', margin: 0 }}>
+          {errorCarga || 'Cargando datos...'}
+        </p>
+        {errorCarga && (
+          <p style={{ color: 'var(--text-low)', fontSize: '0.92rem', margin: 0 }}>
+            No pudimos cargar la agenda. Podés reintentar o cerrar sesión e entrar de nuevo.
+          </p>
+        )}
+      </div>
+      {errorCarga && (
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button
+            type="button"
+            onClick={() => { setErrorCarga(''); setIntentoRecarga((n) => n + 1); }}
+            style={{ minHeight: '48px', padding: '0 1.6rem', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--gold-gradient)', color: '#241a08', fontWeight: 700, cursor: 'pointer' }}
+          >
+            Reintentar
+          </button>
+          <button
+            type="button"
+            onClick={handleLogout}
+            style={{ minHeight: '48px', padding: '0 1.6rem', borderRadius: 'var(--radius-sm)', background: 'var(--card-soft)', color: 'var(--text-hi)', border: '1px solid var(--line)', fontWeight: 600, cursor: 'pointer' }}
+          >
+            Cerrar sesión
+          </button>
+        </div>
+      )}
     </main>
   );
   return (

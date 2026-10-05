@@ -34,15 +34,43 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 //   - body:   si existe → JSON.stringify + Content-Type: application/json
 //   - headers: extras que se mezclan
 // Comportamiento:
+//   - Envuelve el fetch para que un backend caído no reviente con el mensaje
+//     técnico de fetch ("Failed to fetch"), que el usuario no entiende
 //   - Lee respuesta, intenta parsear JSON (catch → {} si no es JSON)
 //   - Si res.ok → devuelve data. Si no → crea Error con data.error o genérico
-//     y le agrega .status = res.status (útil para 401/403/409)
+//     y le agrega .status = res.status (útil para 401/403/409/429)
 //   - Lanza excepción al llamador (quien decide cómo mostrar feedback)
 const peticion = async (path, { method = "GET", token, body, headers = {} } = {}) => {
   const h = { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}), ...headers };
-  const res = await fetch(`${API_URL}${path}`, { method, headers: h, ...(body ? { body: JSON.stringify(body) } : {}) });
+  let res;
+  try {
+    res = await fetch(`${API_URL}${path}`, { method, headers: h, ...(body ? { body: JSON.stringify(body) } : {}) });
+  } catch {
+    // fetch solo rechaza si no hubo respuesta: backend caído, sin internet o
+    // CORS bloqueando. Sin este catch, el catch de arriba de App.jsx terminaba
+    // mostrando el error crudo de fetch.
+    const err = new Error("No pudimos conectar con el servidor. Revisá que esté levantado y que tu conexión a internet esté bien.");
+    err.status = 0;
+    throw err;
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) { const err = new Error(data.error || "Error en la solicitud al servidor."); err.status = res.status; throw err; }
+  if (!res.ok) {
+    const err = new Error(data.error || "Error en la solicitud al servidor.");
+    err.status = res.status;
+    // 429: el rate limiter. El server ya manda un mensaje claro en JSON
+    // (ver message en server/index.js), así que Normally data.error alcanza.
+    // El extra es para cuando el body no es JSON (un proxy/hosting puede
+    // responder 429 con texto plano o HTML) y para mostrar cuánto esperar.
+    if (res.status === 429) {
+      const esperar = Number(res.headers.get("Retry-After"));
+      err.message = data.error || "Demasiados intentos. Esperá un momento y volvé a intentar.";
+      if (Number.isFinite(esperar) && esperar > 0) {
+        const min = Math.ceil(esperar / 60);
+        err.message += ` Podés volver a intentar en unos ${min} minuto${min === 1 ? "" : "s"}.`;
+      }
+    }
+    throw err;
+  }
   return data;
 };
 
@@ -80,10 +108,10 @@ export const obtenerTurnosCliente = (idCliente, token) => peticion(`/clientes/${
 // obtenerTurnos: TODOS los turnos, solo para admin (para el panel de agenda).
 export const obtenerTurnos = (token) => peticion("/turnos", { token });
 // obtenerTurnosDisponibles: horarios ya reservados de un profesional en una fecha.
-export const obtenerTurnosDisponibles = (fecha, idProfesional, token) => peticion(`/turnos/disponibles?fecha=${fecha}&idProfesional=${idProfesional}`, { token });
+export const obtenerTurnosDisponibles = (fecha, idProfesional, token) => peticion(`/turnos/disponibles?fecha=${encodeURIComponent(fecha)}&idProfesional=${encodeURIComponent(idProfesional)}`, { token });
 // obtenerTurnosOcupados: todos los turnos ocupados en un rango de fechas
 // (se usa para contar cuántos quedan libres por día en el inicio).
-export const obtenerTurnosOcupados = (inicio, fin, token) => peticion(`/turnos/ocupados?inicio=${inicio}&fin=${fin}`, { token });
+export const obtenerTurnosOcupados = (inicio, fin, token) => peticion(`/turnos/ocupados?inicio=${encodeURIComponent(inicio)}&fin=${encodeURIComponent(fin)}`, { token });
 export const reservarTurno = (datos, token) => peticion("/turnos", { method: "POST", token, body: datos });
 export const cancelarTurno = (idTurno, token) => peticion(`/turnos/${idTurno}/cancelar`, { method: "PATCH", token });
 export const actualizarTurno = (idTurno, datos, token) => peticion(`/turnos/${idTurno}`, { method: "PATCH", token, body: datos });

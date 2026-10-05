@@ -21,6 +21,10 @@
    - --card / --card-soft / --card-strong → opacidades de las tarjetas
    - --gold / --gold-soft / --gold-deep / --copper → la paleta de marca
    - --gold-gradient → degradado dorado (botones y detalles destacados)
+     - --gold-ink  texto OSCURO para poner ENCIMA de --gold-gradient. Hace falta
+       porque el degradado es claro: sin esta variable, .step-badge (fondo
+       dorado + color: var(--gold-ink)) se queda sin color válido y el número
+       del paso queda en texto claro sobre dorado, casi ilegible.
    - --text-hi / --text-mid / --text-low → los tres niveles de texto
    - --ok / --ok-bg / --err / --err-bg → verde de éxito y rojo de error
    - --radius-lg/md/sm, --shadow-card, --shadow-pop → bordes y sombras
@@ -29,7 +33,7 @@
 
 /* ── Reset y variables globales del tema ────────────── */
 * { box-sizing: border-box; }
-:root { font-family: "Outfit", "Segoe UI", system-ui, sans-serif; line-height: 1.5; font-weight: 400; color: #f7f0e1; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; --font-display: "Playfair Display", Georgia, "Times New Roman", serif; --font-body: "Outfit", "Segoe UI", system-ui, sans-serif; --bg-0: #0d0a06; --bg-1: #17110a; --card: rgba(31, 23, 14, 0.72); --card-soft: rgba(255, 255, 255, 0.035); --card-strong: rgba(255, 255, 255, 0.07); --line: rgba(236, 190, 100, 0.14); --line-soft: rgba(236, 190, 100, 0.09); --line-strong: rgba(236, 190, 100, 0.3); --gold: #e6b254; --gold-soft: #f3cf85; --gold-deep: #b98a33; --copper: #ef9f5f; --gold-gradient: linear-gradient(135deg, #f0c877 0%, #e0a83f 55%, #c98f2e 100%); --text-hi: #f7f0e1; --text-mid: #d2c7b2; --text-low: #8e8271; --ok: #7fd6a2; --ok-bg: rgba(63, 185, 120, 0.14); --err: #f1999b; --err-bg: rgba(224, 92, 96, 0.14); --radius-lg: 24px; --radius-md: 16px; --radius-sm: 12px; --shadow-card: 0 24px 60px rgba(0, 0, 0, 0.42); --shadow-pop: 0 30px 80px rgba(0, 0, 0, 0.55); color-scheme: dark; }
+:root { font-family: "Outfit", "Segoe UI", system-ui, sans-serif; line-height: 1.5; font-weight: 400; color: #f7f0e1; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; --font-display: "Playfair Display", Georgia, "Times New Roman", serif; --font-body: "Outfit", "Segoe UI", system-ui, sans-serif; --bg-0: #0d0a06; --bg-1: #17110a; --card: rgba(31, 23, 14, 0.72); --card-soft: rgba(255, 255, 255, 0.035); --card-strong: rgba(255, 255, 255, 0.07); --line: rgba(236, 190, 100, 0.14); --line-soft: rgba(236, 190, 100, 0.09); --line-strong: rgba(236, 190, 100, 0.3); --gold: #e6b254; --gold-soft: #f3cf85; --gold-deep: #b98a33; --copper: #ef9f5f; --gold-gradient: linear-gradient(135deg, #f0c877 0%, #e0a83f 55%, #c98f2e 100%); --gold-ink: #241a08; --text-hi: #f7f0e1; --text-mid: #d2c7b2; --text-low: #8e8271; --ok: #7fd6a2; --ok-bg: rgba(63, 185, 120, 0.14); --err: #f1999b; --err-bg: rgba(224, 92, 96, 0.14); --radius-lg: 24px; --radius-md: 16px; --radius-sm: 12px; --shadow-card: 0 24px 60px rgba(0, 0, 0, 0.42); --shadow-pop: 0 30px 80px rgba(0, 0, 0, 0.55); color-scheme: dark; }
 
 /* ── Estilos base de elementos ──────────────────────── */
 /* Defaults de cada elemento: sin margen en los títulos, body sin margen,

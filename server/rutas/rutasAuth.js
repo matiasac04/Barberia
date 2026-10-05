@@ -31,6 +31,7 @@ const bcrypt = require("bcryptjs");
 
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, JWT_SECRET } = require("../autenticacion");
+const { errorPassword } = require("../validaciones");
 
 // ── Helpers de verificación ───────────────────────────
 // verificarPassword(textoPlano, hash): compara de forma segura.
@@ -65,6 +66,23 @@ router.post("/registro", async (req, res) => {
 
     if (!EMAIL_REGEX.test(emailFinal)) {
       return res.status(400).json({ error: "El mail ingresado no es válido." });
+    }
+
+    // Longitud mínima y máxima de la contraseña. Antes no había mínimo: se
+    // podía registrar con password "1" (verificado, devolvía 201). Con login
+    // por email, una contraseña de un carácter se adivina por fuerza bruta en
+    // nada, y la única defensa es el rate limit de 20 intentos cada 15 min.
+    const errPass = errorPassword(password);
+    if (errPass) return res.status(400).json({ error: errPass });
+
+    // Las columnas son VARCHAR(100)/VARCHAR(20): sin tope de longitud, un
+    // nombre de 300 caracteres revienta con error 2628 de truncamiento y la
+    // API responde 500 en vez de un 400 que diga qué pasó.
+    if (String(nombre).length > 100 || String(apellido).length > 100) {
+      return res.status(400).json({ error: "Nombre y apellido no pueden superar los 100 caracteres." });
+    }
+    if (telefono != null && String(telefono).length > 20) {
+      return res.status(400).json({ error: "El teléfono no puede superar los 20 caracteres." });
     }
 
     // ¿Ya existe una cuenta con ese email? (unicidad)

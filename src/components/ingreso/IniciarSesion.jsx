@@ -50,7 +50,7 @@ function IniciarSesion({ authScreen, authFeedback, handleLoginSubmit, handleRegi
               <input type="text" placeholder="Nombre" value={registerForm.firstName} onChange={(e) => setRegisterForm((p) => ({ ...p, firstName: e.target.value }))} />
               <input type="text" placeholder="Apellido" value={registerForm.lastName} onChange={(e) => setRegisterForm((p) => ({ ...p, lastName: e.target.value }))} />
               <input type="email" placeholder="Mail" value={registerForm.email} onChange={(e) => setRegisterForm((p) => ({ ...p, email: e.target.value }))} />
-              <input type="password" placeholder="Contraseña" value={registerForm.password} onChange={(e) => setRegisterForm((p) => ({ ...p, password: e.target.value }))} />
+              <input type="password" placeholder="Contraseña (mínimo 8 caracteres)" minLength={8} maxLength={72} value={registerForm.password} onChange={(e) => setRegisterForm((p) => ({ ...p, password: e.target.value }))} />
               <input type="tel" placeholder="WhatsApp" value={registerForm.whatsapp} onChange={(e) => setRegisterForm((p) => ({ ...p, whatsapp: e.target.value }))} />
             </div>
             <button className="auth-submit primary" type="submit">Crear cuenta</button>

@@ -38,6 +38,7 @@ const router = require("express").Router();
 
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
+const { errorFecha, errorHora } = require("../validaciones");
 
 // ── Helpers de profesionales ──────────────────────────
 // generarEmailProfesional(): email interno válido y único para cuando el
@@ -204,9 +205,46 @@ router.get("/horarios", jwtMiddleware, async (req, res) => {
 router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (req, res) => {
   const { horarios } = req.body;
   if (!Array.isArray(horarios)) return res.status(400).json({ error: "Falta la lista de horarios." });
+  // Cada horario se valida antes de borrar el anterior. Sin esto, un
+  // diaSemana faltante o no numérico llegaba como NaN, mssql lo pasaba a NULL y
+  // como HorarioLaboral.diaSemana es nullable el INSERT TENÍA ÉXITO con la
+  // fila a NULL: un registro invisible que ni el cálculo del servidor ni el
+  // del frontend llegan a leer jamás.
+  for (const h of horarios) {
+    const dia = Number(h && h.diaSemana);
+    if (!Number.isInteger(dia) || dia < 0 || dia > 6) {
+      return res.status(400).json({ error: "El día de la semana debe ser un número del 0 (domingo) al 6 (sábado)." });
+    }
+    if (h.horaEntrada != null) {
+      const e = errorHora(h.horaEntrada);
+      if (e) return res.status(400).json({ error: `horaEntrada: ${e}` });
+    }
+    if (h.horaSalida != null) {
+      const e = errorHora(h.horaSalida);
+      if (e) return res.status(400).json({ error: `horaSalida: ${e}` });
+    }
+    // Una franja invertida no es un error de SQL: se guarda y el cálculo del
+    // servidor la descarta con un `continue`, así que el admin veía el horario
+    // guardado en el panel y el turno nunca aparecía como reservable.
+    if (h.horaEntrada != null && h.horaSalida != null && h.horaSalida <= h.horaEntrada) {
+      return res.status(400).json({ error: "La hora de salida tiene que ser posterior a la de entrada." });
+    }
+  }
   try {
     const db = await getPool();
     const profesionalId = Number(req.params.id);
+    // Que el profesional exista se verifica ANTES de abrir la transacción.
+    // Antes no se comprobaba nada: un PUT a /profesionales/99999/horarios
+    // borraba cero filas, insertaba cero y respondía 200 "Horarios
+    // actualizados.", así que el admin creía haber guardado el horario de un
+    // profesional que no existe (la FK solo lo frenaría si algún día se
+    // mandara un id de veras, y ahí el error salía como 500, no como 404).
+    const existe = await new sql.Request(db)
+      .input("id", sql.Int, profesionalId)
+      .query("SELECT idProfesional FROM Profesional WHERE idProfesional = @id");
+    if (existe.recordset.length === 0) {
+      return res.status(404).json({ error: "Profesional no encontrado." });
+    }
     const transaction = new sql.Transaction(db);
     await transaction.begin();
     try {
@@ -268,8 +306,39 @@ router.get("/bloqueos", jwtMiddleware, async (req, res) => {
 router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (req, res) => {
   const { fecha, diaCompleto, slots } = req.body || {};
   if (!fecha) return res.status(400).json({ error: "Falta la fecha." });
+  const errFecha = errorFecha(fecha);
+  if (errFecha) return res.status(400).json({ error: errFecha });
+  // Un body incompleto soltaba un DELETE que borraba TODOS los bloqueos de ese
+  // día y no insertaba nada: es decir, "desbloquear todo el día" pasaba
+  // escribiéndolo como si fuera un error tipográfico. Ahora tiene que decir
+  // explícitamente slots: [] para desbloquear.
+  if (!diaCompleto && !Array.isArray(slots)) {
+    return res.status(400).json({ error: 'Mandá "diaCompleto": true para bloquear el día entero, o "slots": [] para desbloquearlo.' });
+  }
+  // Los slots se validan ANTES de borrar nada. Además se filtra el caso
+  // peligroso: una hora NULL en BloqueoHorario significa "día completo
+  // bloqueado" (es así como lo interpreta el servidor al leer y el frontend
+  // al calcular la disponibilidad). Antes, un null perdido dentro del array
+  // terminaba bloqueando el día entero cuando el admin intención era liberar
+  // un solo horario.
+  if (Array.isArray(slots)) {
+    for (const slot of slots) {
+      if (slot == null) continue; // no bloquear nada (se traducía en "cerrar el día")
+      const errHora = errorHora(slot);
+      if (errHora) return res.status(400).json({ error: `Slot inválido: ${errHora}` });
+    }
+  }
   try {
     const db = await getPool();
+    // Que el profesional exista, verificado antes de borrar. Antes un POST a
+    // /profesionales/99999/bloqueos borraba cero, insertaba cero y devolvía
+    // 200 "Bloqueos actualizados."
+    const existe = await new sql.Request(db)
+      .input("id", sql.Int, req.params.id)
+      .query("SELECT idProfesional FROM Profesional WHERE idProfesional = @id");
+    if (existe.recordset.length === 0) {
+      return res.status(404).json({ error: "Profesional no encontrado." });
+    }
     const transaction = new sql.Transaction(db);
     await transaction.begin();
     try {
@@ -289,6 +358,11 @@ router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (r
       // Caso B: horarios sueltos → una fila por slot.
       else if (Array.isArray(slots)) {
         for (const slot of slots) {
+          // Los null ya se filtraron en la validación de arriba; el filtro se
+          // repite acá porque el INSERT con hora=NULL significaría "día
+          // completo bloqueado" y el admin que quería liberar 09:00 cerraría
+          // las 09:00 a las 17:00 sin darse cuenta.
+          if (slot == null) continue;
           await new sql.Request(transaction)
             .input("id", sql.Int, req.params.id)
             .input("fecha", sql.Date, fecha)

@@ -44,6 +44,24 @@ const { getPool } = require("./conexion");
 // app = la aplicación Express. Acá se le registra todo lo que va a manejar.
 const app = express();
 
+// ── trust proxy (OBLIGATORIO antes de los rate limiters) ───────────
+//
+// Sin esto, Express ve TODAS las requests como si vinieran de la IP interna
+// del servidor, así que los dos rate limiters de abajo cuentan para toda la
+// app junta. En local no molesta (todo viene de 127.0.0.1) pero en Belmo el
+// tráfico pasa por el proxy del hosting: las 20 cuentas de /login y las 300
+// requests globales serían UN SOLO cubo compartido. Con dos personas usando la
+// app al mismo tiempo, el tercero que entra recibe 429 y no puede iniciar
+// sesión.
+//
+// El "1" dice: confiá en exactamente un salto de proxy (el del hosting).
+// Confiar más (o en true) permitiría que un cliente falseara
+// X-Forwarded-For y evadiera los límites.
+//
+// Va antes de app.use(limiter) a propósito: el middleware lee req.ip en el
+// momento en que se registra la request.
+app.set("trust proxy", 1);
+
 app.use(helmet());  // cabeceras de seguridad
 app.use(cors());    // CORS abierto (API pública de solo lectura + escritura con JWT)
 app.use(express.json());  // body JSON → req.body
@@ -55,6 +73,10 @@ const limiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  // El 429 tiene que ser JSON: el frontend hace res.json() y si le llega
+  // texto plano cae en el catch y muestra "Error en la solicitud al servidor."
+  // en vez de "demasiados intentos, esperá un rato".
+  message: { error: "Demasiadas consultas. Esperá un rato y volvé a intentar." },
 });
 app.use(limiter);
 
@@ -65,6 +87,9 @@ const authLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
+  // Mismo motivo que el global: el 429 tiene que ser JSON para que el
+  // frontend pueda mostrar un mensaje útil en vez de "Error en la solicitud".
+  message: { error: "Demasiados intentos de acceso. Esperá 15 minutos y volvé a intentar." },
 });
 app.use(["/login", "/registro"], authLimiter);
 
