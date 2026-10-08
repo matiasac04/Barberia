@@ -132,3 +132,8 @@ app.listen(PORT, () => {
   // si falla solo queda un warning: la app sigue igual y reintenta al vuelo.
   getPool().catch((e) => console.error("No se pudo pre-calentar la conexión a la base:", e.message));
 });
+
+// Export de la app: es la forma que Vercel usa para detectar Express y
+// empaquetarlo como Function (zero-config). En local no cambia nada:
+// `node index.js` igual entra por el app.listen de arriba.
+module.exports = app;

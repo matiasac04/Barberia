@@ -56,6 +56,8 @@ Spa de barbería (reservas de turnos) en React 19 + Vite 8, sin TypeScript, con 
 - Cualquier integrante del equipo: clonar con `git clone https://github.com/matiasac04/Barberia.git`. NO hacer `pull`/`push` de historiales viejos ni `push --force` (pisaría la estructura correcta). Si aparece "unrelated histories", resolver con `git fetch origin` + `git reset --hard origin/main`, o re-clonar.
 
 ## Deploy (en proceso)
-- Objetivo: publicación gratuita = frontend en **Vercel** + backend en **Belmo** (dashboard.belmo.io) porque Koyeb ya no tiene tier gratis (fue absorbida por Mistral) y Render duerme (cold start). Northflank pide tarjeta. Oracle Cloud es la alternativa robusta si Belmo no alcanza.
-- Repo ya subido y estructurado: falta conectar Belmo (backend, root dir `server`, build `npm install`, run `npm start`, env vars en el panel, NO en el repo) y Vercel (frontend, env `VITE_API_URL` apuntando a la URL de Belmo).
-- La DB es externa (SQL Server en Somee, credenciales en `.env` del server, fuera del repo), así que el deploy no afecta datos.
+- Objetivo: todo en **Vercel** (plan Hobby, gratis), con **2 proyectos** del mismo repo de GitHub (`matiasac04/Barberia`) conectados vía Git: cada push a `main` despliega ambos. (Se descartó Belmo/Koyeb/Render/Northflank.)
+- **Proyecto frontend**: root directory vacío (raíz del repo). Vite se detecta solo (build `vite build`, output `dist/`). Env `VITE_API_URL` = URL del proyecto backend (sin barra final), en Production y Preview (se inyecta en el build).
+- **Proyecto backend**: root directory `server`. Express se detecta zero-config (entry `index.js` con `app.listen` + `module.exports = app`). Sin build command. Env en el dashboard, NO en el repo: `usuario_bd`, `psw_bd`, `servidor_bd`, `nombre_bd`, `JWT_SECRET`. Región de funciones cercana al SQL de Somee.
+- La DB es externa (SQL Server en Somee, credenciales en `server/.env`, fuera del repo), así que el deploy no afecta datos.
+- Verificación: `GET https://<api>.vercel.app/servicios` devuelve JSON; después probar end-to-end login, turnos y panel admin.
