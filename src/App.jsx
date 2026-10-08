@@ -53,7 +53,7 @@ import { horariosFijos } from './datos/semilla';
 // Funciones de la API (todas las llamadas al backend, ver src/servicios/api.js):
 import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, verificarToken } from './servicios/api';
 // Utilidades de fechas/slots/estados (ver src/utilidades/funciones.js):
-import { sePuedeCancelar, formatoFecha, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, esDiaCerrado, estadoDelTurno, datosDelDia, fechaAIso } from './utilidades/funciones';
+import { sePuedeCancelar, formatoFecha, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, horariosPasados, esDiaCerrado, estadoDelTurno, datosDelDia, fechaAIso } from './utilidades/funciones';
 
 // ── Constantes de calendario ─────────────────────────
 // Ventana de reservas: de HOY (0:00) hasta HOY + 30 días (23:59:59).
@@ -368,7 +368,11 @@ return () => { cancelado = true; };
   const horariosDelDia = patronDiaSeleccionado ? horariosDeLaSemana(horarioLaboral, profesionalSeleccionado, patronDiaSeleccionado, horariosFijos) : [];
   // Lo bloqueado = turnos ya tomados + bloqueos puntuales que cargó el admin
   const horariosBloqueadosLocales = patronDiaSeleccionado ? [...(turnosOcupados[profesionalSeleccionado]?.[fechaSeleccionada] ?? []), ...bloqueosDeLaFecha(bloqueosPorFecha, profesionalSeleccionado, fechaSeleccionada, horariosDelDia)] : horariosDelDia;
-  const horariosNoDisponibles = [...new Set([...horariosBloqueadosLocales, ...horariosOcupadosApi])];  // sin duplicados
+  // Si la fecha elegida es HOY, los horarios que ya pasaron también quedan "no
+  // disponibles" (se grisean en la grilla como los ocupados y el auto-ajuste
+  // de la hora elige uno válido). El backend además los rechaza con 400.
+  const horariosPasadosHoy = horariosPasados(fechaSeleccionada, horariosDelDia);
+  const horariosNoDisponibles = [...new Set([...horariosBloqueadosLocales, ...horariosOcupadosApi, ...horariosPasadosHoy])];  // sin duplicados
   // DISPONIBLES = todos los slots del día − los no disponibles
   const horariosLibres = horariosDelDia.filter((s) => !horariosNoDisponibles.includes(s));
   // Auto-ajuste de la hora elegida: si no quedan slots la limpia; si el

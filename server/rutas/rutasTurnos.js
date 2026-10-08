@@ -85,6 +85,16 @@ const tieneMenosDe24h = (fechaIso, horaInicio) => {
   return inicio.getTime() - Date.now() < MS_24H;
 };
 
+// ¿Ese horario ya arrancó? (p. ej. hoy a las 10:00 cuando ya son las 14:35).
+// Mismo criterio que la regla de las 24 h: usa inicioDeTurno, que arma el Date
+// en el reloj del servidor. Si la fecha viene corrupta devuelve false, para que
+// las otras validaciones hablen.
+const horarioYaPaso = (fechaIso, horaInicio) => {
+  const inicio = inicioDeTurno(fechaIso, horaInicio);
+  if (!inicio) return false;
+  return inicio.getTime() <= Date.now();
+};
+
 // ── Normalización y slots atendibles ──────────────────
 // normalizarHora(valor): deja cualquier hora en 'HH:MM' o devuelve '' si no es
 // una hora válida. La usan las validaciones y el INSERT, para que en la base
@@ -332,6 +342,12 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
     return res.status(400).json({ error: "Solo se pueden pedir turnos desde hoy hasta dentro de un mes." });
   }
 
+  // No se puede reservar un horario que ya pasó. La UI los grisa, pero la API
+  // se defiende sola: cualquiera puede mandar un POST a mano.
+  if (horarioYaPaso(fecha, hora)) {
+    return res.status(400).json({ error: "Ese horario ya pasó. Elegí uno más adelante." });
+  }
+
   try {
     const db = await getPool();
 
@@ -555,6 +571,11 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     // un horario que el propio admin guardó y no hay nada que revalidar.
     if (req.user.role !== 'admin' && (fecha !== undefined || horaInicio !== undefined || idProfesional !== undefined)) {
       if (!horaFinal) return res.status(400).json({ error: "El horario no tiene un formato válido (se espera HH:MM)." });
+      // Mismo criterio que la reserva: el destino no puede ser un horario que
+      // ya pasó. El admin queda exceptuado, como con las demás validaciones.
+      if (horarioYaPaso(fechaFinal, horaFinal)) {
+        return res.status(400).json({ error: "Ese horario ya pasó. Elegí uno más adelante." });
+      }
       const diaFinal = new Date(`${fechaFinal}T00:00:00`).getDay();
       const slotsFinal = await slotsAtendiblesDelDia(db, profFinal, diaFinal);
       if (!slotsFinal.includes(horaFinal)) {

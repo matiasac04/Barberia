@@ -18,7 +18,7 @@
 // 2. patronDelDia() traduce getDay() (JS) a patrón (lun/mar/mie/jue/vie/sab)
 // 3. horariosDeLaSemana() arma slots del día: primero busca HorarioLaboral (DB),
 //    si no hay, usa horariosRespaldo (semilla)
-// 4. horariosLibresDelDia() resta ocupados + bloqueos → devuelve libres
+// 4. horariosLibresDelDia() resta ocupados + bloqueos + pasados de hoy → libres
 // 5. estadoDelTurno() decide estado lógico (Confirmado/Expirado/Completado...)
 // 6. sePuedeCancelar() aplica regla > 24 hs (frontend + backend valida)
 //
@@ -201,9 +201,21 @@ export const bloqueosDeLaFecha = (bloqueosPorFecha, idProfesional, fecha, horari
   return rows.map((r) => r.hora)
 }
 
+// horariosPasados(fecha, horarios, ahora): de UNA fecha, los horarios que ya
+// arrancaron. Solo aplica si esa fecha es HOY; cualquier otro día devuelve [].
+// Es la regla "no se puede sacar un turno en un horario que ya pasó" (el
+// backend además la rechaza con 400 en POST /turnos y PATCH /turnos/:id).
+export const horariosPasados = (fecha, horarios, ahora = new Date()) => {
+  const dateStr = String(fecha).trim().split('T')[0]
+  if (dateStr !== fechaAIso(ahora)) return []
+  const minAhora = ahora.getHours() * 60 + ahora.getMinutes()
+  return (Array.isArray(horarios) ? horarios : []).filter((s) => horaAMinutos(s) <= minAhora)
+}
+
 // horariosLibresDelDia(...): la función principal del turnero.
 // Devuelve los horarios libres de un día para un profesional:
-// horario laboral (o respaldo) MENOS lo ocupado (turnosOcupados) y los bloqueos.
+// horario laboral (o respaldo) MENOS lo ocupado (turnosOcupados), los bloqueos
+// y los horarios de hoy que ya pasaron.
 // Los bloqueos de día completo hacen que la lista quede vacía.
 export const horariosLibresDelDia = (turnosOcupados, idProfesional, fecha, horariosFijos, bloqueosPorFecha, horarioLaboral) => {
   const pat = patronDelDia(new Date(`${fecha}T00:00:00`))
@@ -212,6 +224,6 @@ export const horariosLibresDelDia = (turnosOcupados, idProfesional, fecha, horar
   const dateRows = filasDeBloqueo(bloqueosPorFecha, idProfesional, fecha)
   if (dateRows.some((r) => r.hora === null || r.hora === undefined || r.hora === '')) return []
   const dateKey = String(fecha).trim().split('T')[0]
-  const blocked = new Set([...(turnosOcupados[idProfesional]?.[dateKey] ?? []), ...dateRows.map((r) => r.hora)])
+  const blocked = new Set([...(turnosOcupados[idProfesional]?.[dateKey] ?? []), ...dateRows.map((r) => r.hora), ...horariosPasados(fecha, daySlots)])
   return daySlots.filter((s) => !blocked.has(s))
 }

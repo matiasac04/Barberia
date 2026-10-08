@@ -21,7 +21,7 @@ Spa de barbería (reservas de turnos) en React 19 + Vite 8, sin TypeScript, con 
 ## Reglas de dominio
 - Domingos y lunes cerrados (`esDiaCerrado`), ventana de reservas: hoy + 30 días (App.jsx:11-15).
 - Horarios fijos en `horariosFijos` (src/datos/semilla.js): de 09:00–12:00 y 15:00–17:00 (con break de almuerzo). Activos si no hay `HorarioLaboral` en la DB.
-- Disponibilidad = `horariosFijos` menos bloqueos + horarios ya reservados (App.jsx:75-85).
+- Disponibilidad = `horariosFijos` menos bloqueos, horarios ya reservados y horarios de hoy que ya pasaron (`funciones.js` → `horariosLibresDelDia` / `horariosPasados`; el backend también rechaza con 400 en POST/PATCH).
 - Las cancelaciones solo se permiten con >24 h de antelación (`sePuedeCancelar`, src/utilidades/funciones.js:62).
 
 ## Fuentes de verdad del estado
