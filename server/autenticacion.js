@@ -20,7 +20,7 @@
 //    → primero valida el token, después el rol, después ejecuta.
 //
 // El token lo firma /login (jsonwebtoken) con 1h de vencimiento. El frontend
-// lo guarda en localStorage y lo reenvía en cada request (ver src/servicios/api.js).
+// lo guarda en localStorage y lo reenvía en cada request (ver src/servicios/consultas.js).
 const jwt = require("jsonwebtoken");
 
 // Falla RÁPIDO si no hay secreto: es una configuración obligatoria y sin ella

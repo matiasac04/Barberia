@@ -9,10 +9,10 @@
 //      disponibilidad, bloqueos y horarios). Así todos los componentes
 //      ven la misma información y se mantienen sincronizados.
 //   2. ORQUESTAR LAS PETICIONES: concentra todas las llamadas al backend
-//      (a través de src/servicios/api.js). Decide CUÁNDO pedir datos,
+//      (a través de src/servicios/consultas.js). Decide CUÁNDO pedir datos,
 //      QUÉ pedir y QUÉ hacer cuando llegan o fallan.
 //   3. CONTROLAR EL FLUJO DE PANTALLAS: según el usuario logueado
-//      (role: 'admin' o 'client') decide qué vista renderizar:
+//      (role: 'admin' o 'cliente') decide qué vista renderizar:
 //      - admin  → Panel de administración (components/admin/Admin.jsx)
 //      - client → Turnero para reservar (components/cliente/Inicio.jsx)
 //                 o "Mis turnos" (components/cliente/MisTurnos.jsx)
@@ -23,16 +23,16 @@
 //
 // FLUJO DE DATOS (cómo viaja la información):
 //   UI (componentes) → App.jsx (handlers/estado)
-//                    → src/servicios/api.js (peticion/fetch)
+//                    → src/servicios/consultas.js (peticion/fetch)
 //                    → Backend Express (server/index.js + rutas)
 //                    → SQL Server (BD)
 //                    ← respuesta JSON ← vuelve por el mismo camino ← actualiza estado ← re-renderiza UI
 //
-// REGLAS DE NEGOCIO (aplicadas aquí + en ayudantes.js):
-//   - Domingos (0) y lunes (1): DÍAS CERRADOS (isBlockedWeekday).
+// REGLAS DE NEGOCIO (aplicadas aquí + en funciones.js):
+//   - Domingos (0) y lunes (1): DÍAS CERRADOS (esDiaCerrado).
 //   - Ventana de reservas: ÚNICAMENTE desde HOY (00:00) hasta HOY + 30 DÍAS (23:59:59).
 //   - Turnos de 30 minutos. Los slots disponibles salen del HorarioLaboral
-//     del profesional (DB). Si NO tiene horario cargado, usa timeSlots
+//     del profesional (DB). Si NO tiene horario cargado, usa horariosFijos
 //     de respaldo (src/datos/semilla.js).
 //   - Disponibilidad = slots del día − (turnos ocupados + bloqueos puntuales/día completo).
 //   - Cancelaciones/reprogramaciones cliente: requieren > 24 hs de antelación
@@ -49,11 +49,11 @@ import IniciarSesion from './components/ingreso/IniciarSesion'; // Login y regis
 import MisTurnos from './components/cliente/MisTurnos';       // Historial "Mis turnos"
 import WhatsApp from './components/comunes/WhatsApp';        // Botón flotante de WhatsApp
 // Datos semilla (fallback de arranque, la DB es la fuente real):
-import { timeSlots } from './datos/semilla';
-// Funciones de la API (todas las llamadas al backend, ver src/servicios/api.js):
-import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, verificarToken } from './servicios/api';
-// Utilidades de fechas/slots/estados (ver src/utilidades/ayudantes.js):
-import { canCancelBooking, formatCalendarLabel, getDateBlockedSlots, getWeekdayPattern, getWeeklySlots, isBlockedWeekday, resolveBookingStatus, resolveCalendarDetails, toIsoDate } from './utilidades/ayudantes';
+import { horariosFijos } from './datos/semilla';
+// Funciones de la API (todas las llamadas al backend, ver src/servicios/consultas.js):
+import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, verificarToken } from './servicios/consultas';
+// Utilidades de fechas/slots/estados (ver src/utilidades/funciones.js):
+import { sePuedeCancelar, formatoFecha, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, esDiaCerrado, estadoDelTurno, datosDelDia, fechaAIso } from './utilidades/funciones';
 
 // ── Constantes de calendario ─────────────────────────
 // Ventana de reservas: de HOY (0:00) hasta HOY + 30 días (23:59:59).
@@ -62,75 +62,75 @@ const today = new Date(), calendarStart = new Date(today), calendarEnd = new Dat
 calendarStart.setHours(0, 0, 0, 0); calendarEnd.setDate(calendarEnd.getDate() + 30); calendarEnd.setHours(23, 59, 59, 999);
 // Fecha inicial seleccionada en el turnero = hoy, en formato 'YYYY-MM-DD'
 // (formato ISO sin hora, que es como espera el backend).
-const initialCalendarDate = toIsoDate(calendarStart);
+const initialCalendarDate = fechaAIso(calendarStart);
 
 function App() {
   // ── Estado global ────────────────────────────────
   // -------------------------------------------------------------------
   // ESTADO DE SESIÓN
-  //   mainView      → qué vista muestra el cliente: 'client' (turnero)
-  //                   o 'my-bookings' (mis turnos)
+  //   vista      → qué vista muestra el cliente: 'cliente' (turnero)
+  //                   o 'mis-turnos' (mis turnos)
   //   token         → el JWT del backend. Al arrancar se lee de localStorage
   //                   para que la sesión sobreviva al recargar la página.
-  //   currentUser   → el usuario logueado: { role: 'admin'|'client', ... }
-  //   isAuthenticated→ ¿hay token Y usuario? Si no → muestra el login.
+  //   currentUser   → el usuario logueado: { role: 'admin'|'cliente', ... }
+  //   sesionIniciada→ ¿hay token Y usuario? Si no → muestra el login.
   // -------------------------------------------------------------------
-  const [mainView, setMainView] = useState('client');
+  const [vista, setVista] = useState('cliente');
   const [token, setToken] = useState(() => { try { return localStorage.getItem('token') ?? ''; } catch { return ''; } });
   const [currentUser, setCurrentUser] = useState(() => { try { return JSON.parse(localStorage.getItem('currentUser') ?? 'null'); } catch { return null; } });
-  const isAuthenticated = Boolean(token && currentUser);
+  const sesionIniciada = Boolean(token && currentUser);
 
-  // Formulario de ingreso: pantalla activa ('login' | 'register') y sus campos
-  const [authScreen, setAuthScreen] = useState('login');
-  const [loginEmail, setLoginEmail] = useState(''); const [loginPassword, setLoginPassword] = useState('');
-  const [registerForm, setRegisterForm] = useState({ firstName: '', lastName: '', email: '', password: '', whatsapp: '' });
+  // Formulario de ingreso: pantalla activa ('ingreso' | 'registro') y sus campos
+  const [pantallaAcceso, setPantallaAcceso] = useState('ingreso');
+  const [correoIngreso, setCorreoIngreso] = useState(''); const [claveIngreso, setClaveIngreso] = useState('');
+  const [formularioRegistro, setFormularioRegistro] = useState({ nombre: '', apellido: '', email: '', telefono: '', password: '' });
   // Mensaje que se muestra en la pantalla de ingreso (idle/error/success)
-  const [authFeedback, setAuthFeedback] = useState({ type: 'idle', message: 'Primero iniciá sesión para acceder al turnero.' });
+  const [avisoAcceso, setAvisoAcceso] = useState({ type: 'idle', message: 'Primero iniciá sesión para acceder al turnero.' });
 
   // -------------------------------------------------------------------
   // CATÁLOGO (viene de la API / SQL Server)
-  //   barbers   → profesionales ACTIVOS (los que puede elegir el cliente)
-  //   allBarbers→ TODOS (activos + inactivos), para el panel de admin
-  //   services  → el catálogo de servicios (corte, barba, etc.)
+  //   profesionales   → profesionales ACTIVOS (los que puede elegir el cliente)
+  //   todosProfesionales→ TODOS (activos + inactivos), para el panel de admin
+  //   servicios  → el catálogo de servicios (corte, barba, etc.)
   // -------------------------------------------------------------------
-  const [barbers, setBarbers] = useState([]);
-  const [allBarbers, setAllBarbers] = useState([]);
-  const [services, setServices] = useState([]);
+  const [profesionales, setProfesionales] = useState([]);
+  const [todosProfesionales, setTodosProfesionales] = useState([]);
+  const [servicios, setServicios] = useState([]);
 
   // -------------------------------------------------------------------
   // SELECCIÓN del turnero (el wizard del cliente)
   // Guarda lo que el usuario va eligiendo paso a paso: profesional,
   // servicio, fecha, hora, y sus datos de contacto para confirmar.
   // -------------------------------------------------------------------
-  const [selectedBarber, setSelectedBarber] = useState(null);
-  const [selectedService, setSelectedService] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(initialCalendarDate);
-  const [selectedTime, setSelectedTime] = useState('09:00');
-  const [customerName, setCustomerName] = useState(''); const [customerPhone, setCustomerPhone] = useState('');
+  const [profesionalSeleccionado, setProfesionalSeleccionado] = useState(null);
+  const [servicioSeleccionado, setServicioSeleccionado] = useState(null);
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(initialCalendarDate);
+  const [horaSeleccionada, setHoraSeleccionada] = useState('09:00');
+  const [nombreCliente, setNombreCliente] = useState(''); const [telefonoCliente, setTelefonoCliente] = useState('');
 
   // Turnos traídos de la API. Para el cliente son SOLO los suyos,
   // para el admin son TODOS los del negocio.
-  const [confirmedBookings, setConfirmedBookings] = useState([]);
+  const [turnosConfirmados, setTurnosConfirmados] = useState([]);
 
-  // feedback: mensaje de éxito/error/idle en el turnero.
-  // submitting: flag que evita el doble envío del formulario.
-  const [feedback, setFeedback] = useState({ type: 'idle', message: 'Elegí profesional, día y horario para reservar.' });
-  const [submitting, setSubmitting] = useState(false);
+  // aviso: mensaje de éxito/error/idle en el turnero.
+  // enviando: flag que evita el doble envío del formulario.
+  const [aviso, setAviso] = useState({ type: 'idle', message: 'Elegí profesional, día y horario para reservar.' });
+  const [enviando, setSubmitting] = useState(false);
 
   // -------------------------------------------------------------------
   // DISPONIBILIDAD (lo que está ocupado / bloqueado)
   //   horariosOcupadosApi → horas ocupadas de la fecha+barbero elegidos
-  //   loadingAvailability → spinner mientras se consulta a la API
-  //   dateBlockouts       → bloqueos puntuales del admin (día o slot)
+  //   cargandoDisponibilidad → spinner mientras se consulta a la API
+  //   bloqueosPorFecha       → bloqueos puntuales del admin (día o slot)
   //   horarioLaboral      → horario semanal por profesional (si está en DB)
-  //   bookedRange         → TODOS los turnos ocupados de los próximos 30
+  //   rangoReservado         → TODOS los turnos ocupados de los próximos 30
   //                         días, para pintar el calendario mensual
   // -------------------------------------------------------------------
   const [horariosOcupadosApi, setHorariosOcupadosApi] = useState([]);
-  const [loadingAvailability, setLoadingAvailability] = useState(true);
-  const [dateBlockouts, setDateBlockouts] = useState([]);
+  const [cargandoDisponibilidad, setLoadingAvailability] = useState(true);
+  const [bloqueosPorFecha, setBloqueosPorFecha] = useState([]);
   const [horarioLaboral, setHorarioLaboral] = useState([]);
-  const [bookedRange, setBookedRange] = useState([]);
+  const [rangoReservado, setBookedRange] = useState([]);
   // Qué pedido de la carga inicial falló, para no quedar en "Cargando datos..."
   // para siempre sin explicar por qué. Vacío = todo cargó bien.
   const [errorCarga, setErrorCarga] = useState('');
@@ -143,19 +143,19 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
   // ── Sincronización de selección ───────────────────
   // Si el barbero o servicio seleccionado ya no existe en la lista
   // (por ejemplo al recargar datos), se vuelve a seleccionar el primero.
-  useEffect(() => { if (barbers.length > 0 && !barbers.some((b) => b.id === selectedBarber)) setSelectedBarber(barbers[0].id); }, [barbers, selectedBarber]);
-  useEffect(() => { if (services.length > 0 && !services.some((s) => s.id === selectedService)) setSelectedService(services[0].id); }, [selectedService, services]);
+  useEffect(() => { if (profesionales.length > 0 && !profesionales.some((b) => b.id === profesionalSeleccionado)) setProfesionalSeleccionado(profesionales[0].id); }, [profesionales, profesionalSeleccionado]);
+  useEffect(() => { if (servicios.length > 0 && !servicios.some((s) => s.id === servicioSeleccionado)) setServicioSeleccionado(servicios[0].id); }, [servicioSeleccionado, servicios]);
   // Pre-carga el nombre y teléfono del cliente logueado en el formulario
-  useEffect(() => { setCustomerName(currentUser?.name ?? ''); setCustomerPhone(currentUser?.phone ?? ''); }, [currentUser]);
+  useEffect(() => { setNombreCliente(currentUser?.name ?? ''); setTelefonoCliente(currentUser?.phone ?? ''); }, [currentUser]);
 
   // ── Sesión y autenticación ───────────────────────
   // Expulsa al usuario: limpia estado + localStorage y vuelve al login.
   // Se usa cuando el token expira o el backend responde 401 (sesión inválida).
   const expulsarPorSesion = useCallback(() => {
-    setToken(''); setCurrentUser(null); setConfirmedBookings([]);
+    setToken(''); setCurrentUser(null); setTurnosConfirmados([]);
     try { localStorage.removeItem('token'); localStorage.removeItem('currentUser'); history.replaceState(null, '', window.location.pathname); } catch {}
-    setAuthScreen('login'); setLoginEmail(''); setLoginPassword('');
-    setAuthFeedback({ type: 'error', message: 'Tu sesión venció. Iniciá sesión de nuevo para continuar.' });
+    setPantallaAcceso('ingreso'); setCorreoIngreso(''); setClaveIngreso('');
+    setAvisoAcceso({ type: 'error', message: 'Tu sesión venció. Iniciá sesión de nuevo para continuar.' });
   }, []);
 
   // Al arrancar (y cada vez que cambia el token) le pregunta al backend
@@ -166,7 +166,7 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
     let cancelado = false;
     if (!token || !currentUser || currentUser.provider === 'google') return;
     verificarToken(token)
-      .then(() => { if (cancelado) return; setAuthFeedback({ type: 'success', message: currentUser.role === 'admin' ? 'Bienvenido administrador.' : `Sesión iniciada con ${currentUser.email}.` }); })
+      .then(() => { if (cancelado) return; setAvisoAcceso({ type: 'success', message: currentUser.role === 'admin' ? 'Bienvenido administrador.' : `Sesión iniciada con ${currentUser.email}.` }); })
       .catch(() => { if (!cancelado) expulsarPorSesion(); });
     return () => { cancelado = true; };  // evita setState si el componente se desmontó antes
   }, [token, currentUser, expulsarPorSesion]);
@@ -179,7 +179,7 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
     if (!token) return;
     try {
       const p = await obtenerProfesionales(token);
-      if (Array.isArray(p) && p.length > 0) setBarbers(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '' })));
+      if (Array.isArray(p) && p.length > 0) setProfesionales(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '' })));
     } catch (error) { console.warn('No se pudieron obtener los profesionales:', error); }
   }, [token]);
 
@@ -189,7 +189,7 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
     if (!token) return;
     try {
       const p = await obtenerProfesionales(token, true);
-      if (Array.isArray(p)) setAllBarbers(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '', activo: x.activo !== false })));
+      if (Array.isArray(p)) setTodosProfesionales(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '', activo: x.activo !== false })));
     } catch (error) { console.warn('No se pudieron obtener todos los profesionales:', error); }
   }, [token]);
 
@@ -197,7 +197,7 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
   const cargarServicios = useCallback(async () => {
     try {
       const s = await obtenerServicios();
-      if (Array.isArray(s) && s.length > 0) setServices(s.map((x) => ({ id: x.idServicio, name: x.nombre, price: x.precio, durationMinutes: x.duracion_minutos })));
+      if (Array.isArray(s) && s.length > 0) setServicios(s.map((x) => ({ id: x.idServicio, name: x.nombre, price: x.precio, durationMinutes: x.duracion_minutos })));
     } catch (error) { console.warn('No se pudieron obtener los servicios:', error); }
   }, []);
 
@@ -226,7 +226,7 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
       if (resultado.status === 'rejected') { console.warn(`[carga inicial] Falló ${etiqueta}:`, resultado.reason); return null; }
       return resultado.value;
     };
-    Promise.allSettled([obtenerProfesionales(token), obtenerProfesionales(token, true), obtenerServicios(), obtenerBloqueos(token), obtenerHorarios(token), obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd), token)])
+    Promise.allSettled([obtenerProfesionales(token), obtenerProfesionales(token, true), obtenerServicios(), obtenerBloqueos(token), obtenerHorarios(token), obtenerTurnosOcupados(initialCalendarDate, fechaAIso(calendarEnd), token)])
       .then(([rp, rpa, rs, rb, rh, ro]) => {
         if (cancelado) return;
         const fallidas = [];
@@ -236,10 +236,10 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
         const b = valor(rb, 'bloqueos') ?? (fallidas.push('bloqueos'), null);
         const h = valor(rh, 'horarios') ?? (fallidas.push('horarios'), null);
         const o = valor(ro, 'turnos ocupados') ?? (fallidas.push('turnos ocupados'), null);
-        if (Array.isArray(p) && p.length > 0) setBarbers(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '' })));
-        if (Array.isArray(pa)) setAllBarbers(pa.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '', activo: x.activo !== false })));
-        if (Array.isArray(s) && s.length > 0) setServices(s.map((x) => ({ id: x.idServicio, name: x.nombre, price: x.precio, durationMinutes: x.duracion_minutos })));
-        if (Array.isArray(b)) setDateBlockouts(b);
+        if (Array.isArray(p) && p.length > 0) setProfesionales(p.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '' })));
+        if (Array.isArray(pa)) setTodosProfesionales(pa.map((x) => ({ id: x.idProfesional, name: String(x.nombre).trim(), email: x.email ?? '', telefono: x.telefono ?? '', activo: x.activo !== false })));
+        if (Array.isArray(s) && s.length > 0) setServicios(s.map((x) => ({ id: x.idServicio, name: x.nombre, price: x.precio, durationMinutes: x.duracion_minutos })));
+        if (Array.isArray(b)) setBloqueosPorFecha(b);
         if (Array.isArray(h)) setHorarioLaboral(h);
         if (Array.isArray(o)) setBookedRange(o);
         setErrorCarga(fallidas.length ? `No se pudo cargar: ${fallidas.join(', ')}. Revisá que el backend esté corriendo.` : '');
@@ -251,7 +251,7 @@ return () => { cancelado = true; };
   // de reservar/cancelar/reprogramar para refrescar el calendario mensual.
   const refrescarOcupados = useCallback(() => {
     if (!token) return;
-    obtenerTurnosOcupados(initialCalendarDate, toIsoDate(calendarEnd), token)
+    obtenerTurnosOcupados(initialCalendarDate, fechaAIso(calendarEnd), token)
       .then((o) => { if (Array.isArray(o)) setBookedRange(o); })
       .catch(() => {});
   }, [token]);
@@ -265,7 +265,7 @@ return () => { cancelado = true; };
   // todas las horas. Como abajo se hace `.filter(Boolean)`, la lista de
   // ocupados quedaba VACÍA sin dar ningún error: el calendario pintaba todos
   // los días "libre" y el cliente no podía cancelar ni reprogramar (porque
-  // canCancelBooking necesita la hora). Por eso, si algún día esto no puede
+  // sePuedeCancelar necesita la hora). Por eso, si algún día esto no puede
   // normalizar, AVISA en vez de devolver '' en silencio.
   const normalizarHoraApi = useCallback((valor) => {
     if (!valor) return '';
@@ -281,17 +281,17 @@ return () => { cancelado = true; };
   // Se re-ejecuta automáticamente (gracias al useEffect de abajo) cada
   // vez que cambia el día seleccionado o el profesional.
   const cargarDisponibilidad = useCallback(() => {
-    if (!token || !selectedDate || !selectedBarber) return;  // falta sesión o falta elegir algo
+    if (!token || !fechaSeleccionada || !profesionalSeleccionado) return;  // falta sesión o falta elegir algo
     setLoadingAvailability(true);  // prende el spinner
-    obtenerTurnosDisponibles(selectedDate, selectedBarber, token)
+    obtenerTurnosDisponibles(fechaSeleccionada, profesionalSeleccionado, token)
       .then((r) => setHorariosOcupadosApi((r?.turnosOcupados ?? []).map((t) => normalizarHoraApi(t.horaInicio)).filter(Boolean)))
       .catch(() => setHorariosOcupadosApi([]))
       .finally(() => setLoadingAvailability(false));  // siempre apaga el spinner
-  }, [token, selectedDate, selectedBarber, normalizarHoraApi]);
+  }, [token, fechaSeleccionada, profesionalSeleccionado, normalizarHoraApi]);
   useEffect(() => { cargarDisponibilidad(); }, [cargarDisponibilidad]);
 
   // Trae los turnos del CLIENTE logueado y los convierte a un formato único
-  // para la UI. `resolveBookingStatus` calcula en qué estado está cada turno
+  // para la UI. `estadoDelTurno` calcula en qué estado está cada turno
   // (pendiente / vencido / completado / cancelado / no-show) según su fecha,
   // hora y el momento actual.
   const cargarMisTurnos = useCallback(async () => {
@@ -300,24 +300,24 @@ return () => { cancelado = true; };
       const res = await obtenerTurnosCliente(currentUser.idCliente, token);
       const lista = Array.isArray(res) ? res : (res?.turnos ?? res?.data ?? []);
       if (!Array.isArray(lista)) return;
-      setConfirmedBookings(lista.map((t) => {
-        const fechaIso = toIsoDate(t.fecha), hora = normalizarHoraApi(t.horaInicio);
-        const status = resolveBookingStatus(t.estado, fechaIso, hora);
-        return { id: t.idTurno, ownerEmail: currentUser.email, barberId: t.idProfesional ?? null, barberName: t.profesional, serviceName: t.servicio, servicePrice: t.precioTotal, bookingDate: fechaIso, time: hora, customerName: currentUser.name, status, ...resolveCalendarDetails(fechaIso) };
+      setTurnosConfirmados(lista.map((t) => {
+        const fechaIso = fechaAIso(t.fecha), hora = normalizarHoraApi(t.horaInicio);
+        const estado = estadoDelTurno(t.estado, fechaIso, hora);
+        return { id: t.idTurno, emailCliente: currentUser.email, idProfesional: t.idProfesional ?? null, nombreProfesional: t.profesional, nombreServicio: t.servicio, precioServicio: t.precioTotal, fecha: fechaIso, hora, nombreCliente: currentUser.name, estado, ...datosDelDia(fechaIso) };
       }));
     } catch (error) { if (error?.status === 401) expulsarPorSesion(); }
   }, [currentUser, token, expulsarPorSesion, normalizarHoraApi]);
-  useEffect(() => { if (isAuthenticated && currentUser?.role !== 'admin') cargarMisTurnos(); }, [isAuthenticated, cargarMisTurnos, currentUser?.role]);
+  useEffect(() => { if (sesionIniciada && currentUser?.role !== 'admin') cargarMisTurnos(); }, [sesionIniciada, cargarMisTurnos, currentUser?.role]);
   // Auto-refresco para el cliente: vuelve a cargar "Mis turnos" cada 20
   // segundos y al volver a la pestaña (visibilitychange). Así el estado de
   // un turno se actualiza solo (ej. de 'pendiente' a 'completado').
   useEffect(() => {
-    if (!isAuthenticated || currentUser?.role === 'admin') return;
+    if (!sesionIniciada || currentUser?.role === 'admin') return;
     const onVisible = () => { if (document.visibilityState === 'visible') cargarMisTurnos(); };
     document.addEventListener('visibilitychange', onVisible);
     const id = setInterval(() => { if (document.visibilityState === 'visible') cargarMisTurnos(); }, 20000);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
-  }, [isAuthenticated, currentUser?.role, cargarMisTurnos]);
+  }, [sesionIniciada, currentUser?.role, cargarMisTurnos]);
 
   // Igual que cargarMisTurnos pero para el ADMIN: trae TODOS los turnos del
   // negocio con sus JOINs (nombre del cliente, del barbero y del servicio).
@@ -327,104 +327,104 @@ return () => { cancelado = true; };
       const res = await obtenerTurnos(token);
       const lista = Array.isArray(res) ? res : (res?.turnos ?? res?.data ?? []);
       if (!Array.isArray(lista)) return;
-      setConfirmedBookings(lista.map((t) => {
-        const fechaIso = toIsoDate(t.fecha), hora = normalizarHoraApi(t.horaInicio);
-        const status = resolveBookingStatus(t.estado, fechaIso, hora);
-        return { id: t.idTurno, idCliente: t.idCliente ?? null, ownerEmail: t.email ?? '', barberId: t.idProfesional ?? null, serviceId: t.idServicio ?? null, barberName: t.profesional, serviceName: t.servicio, servicePrice: t.precioTotal, bookingDate: fechaIso, time: hora, customerName: t.nombreCliente ?? '', customerPhone: t.telefono ?? '', status, ...resolveCalendarDetails(fechaIso) };
+      setTurnosConfirmados(lista.map((t) => {
+        const fechaIso = fechaAIso(t.fecha), hora = normalizarHoraApi(t.horaInicio);
+        const estado = estadoDelTurno(t.estado, fechaIso, hora);
+        return { id: t.idTurno, idCliente: t.idCliente ?? null, emailCliente: t.email ?? '', idProfesional: t.idProfesional ?? null, idServicio: t.idServicio ?? null, nombreProfesional: t.profesional, nombreServicio: t.servicio, precioServicio: t.precioTotal, fecha: fechaIso, hora, nombreCliente: t.nombreCliente ?? '', telefonoCliente: t.telefono ?? '', estado, ...datosDelDia(fechaIso) };
       }));
     } catch (error) { if (error?.status === 401) expulsarPorSesion(); }
   }, [token, expulsarPorSesion, normalizarHoraApi]);
-  useEffect(() => { if (isAuthenticated && currentUser?.role === 'admin') cargarTurnosAdmin(); }, [isAuthenticated, cargarTurnosAdmin, currentUser?.role]);
+  useEffect(() => { if (sesionIniciada && currentUser?.role === 'admin') cargarTurnosAdmin(); }, [sesionIniciada, cargarTurnosAdmin, currentUser?.role]);
 
   // ── Disponibilidad del día (slots libres/ocupados) ──
   // Construye el "mapa de ocupación": { [idBarbero]: { 'YYYY-MM-DD': ['10:30', ...] } }
-  // combinando el rango del calendario mensual (bookedRange) con los turnos
-  // ya cargados (confirmedBookings). `meter()` agrega una hora al mapa.
-  const takenSlots = useMemo(() => {
+  // combinando el rango del calendario mensual (rangoReservado) con los turnos
+  // ya cargados (turnosConfirmados). `meter()` agrega una hora al mapa.
+  const turnosOcupados = useMemo(() => {
     const snap = {};  // el mapa arranca vacío; lo llenan los turnos de abajo
-    const meter = (barberId, dayKey, time) => {  // marca una hora como ocupada
-      if (barberId == null || dayKey == null || !time) return;
-      const bs = snap[barberId] ?? (snap[barberId] = {});
+    const meter = (idProfesional, dayKey, time) => {  // marca una hora como ocupada
+      if (idProfesional == null || dayKey == null || !time) return;
+      const bs = snap[idProfesional] ?? (snap[idProfesional] = {});
       bs[dayKey] = [...(bs[dayKey] ?? []), time];
     };
-    bookedRange.forEach((t) => {
+    rangoReservado.forEach((t) => {
       const hora = normalizarHoraApi(t.horaInicio);
       if (!hora) return;
-      meter(t.idProfesional, toIsoDate(t.fecha), hora);
+      meter(t.idProfesional, fechaAIso(t.fecha), hora);
     });
-    confirmedBookings.forEach((b) => meter(b.barberId, toIsoDate(b.bookingDate), b.time));
+    turnosConfirmados.forEach((b) => meter(b.idProfesional, fechaAIso(b.fecha), b.hora));
     return snap;
-  }, [bookedRange, confirmedBookings, normalizarHoraApi]);
+  }, [rangoReservado, turnosConfirmados, normalizarHoraApi]);
 
   // ── Datos derivados del día seleccionado ──────────
-  const currentBarber = barbers.find((b) => b.id === selectedBarber) ?? barbers[0] ?? null;
-  const currentService = services.find((s) => s.id === selectedService) ?? services[0] ?? null;
-  const selectedDateObject = new Date(`${selectedDate}T00:00:00`);
-  const selectedWeekdayPattern = getWeekdayPattern(selectedDateObject);  // 'weekday' | 'saturday' | null
-  const selectedDateLabel = formatCalendarLabel(selectedDateObject);     // { label, date }
-  const currentDay = { id: selectedWeekdayPattern ?? 'sun', label: selectedDateLabel.label, date: selectedDateLabel.date };
+  const profesionalActual = profesionales.find((b) => b.id === profesionalSeleccionado) ?? profesionales[0] ?? null;
+  const servicioActual = servicios.find((s) => s.id === servicioSeleccionado) ?? servicios[0] ?? null;
+  const diaSeleccionado = new Date(`${fechaSeleccionada}T00:00:00`);
+  const patronDiaSeleccionado = patronDelDia(diaSeleccionado);  // 'weekday' | 'saturday' | null
+  const fechaFormateada = formatoFecha(diaSeleccionado);     // { label, date }
+  const diaActual = { id: patronDiaSeleccionado ?? 'dom', label: fechaFormateada.label, date: fechaFormateada.date };
   // Slots posibles del día: usa el horario laboral si existe en la DB,
-  // si no, cae en el horario fijo de respaldo (timeSlots de semilla.js)
-  const daySlots = selectedWeekdayPattern ? getWeeklySlots(horarioLaboral, selectedBarber, selectedWeekdayPattern, timeSlots) : [];
+  // si no, cae en el horario fijo de respaldo (horariosFijos de semilla.js)
+  const horariosDelDia = patronDiaSeleccionado ? horariosDeLaSemana(horarioLaboral, profesionalSeleccionado, patronDiaSeleccionado, horariosFijos) : [];
   // Lo bloqueado = turnos ya tomados + bloqueos puntuales que cargó el admin
-  const horariosBloqueadosLocales = selectedWeekdayPattern ? [...(takenSlots[selectedBarber]?.[selectedDate] ?? []), ...getDateBlockedSlots(dateBlockouts, selectedBarber, selectedDate, daySlots)] : daySlots;
-  const unavailableSlots = [...new Set([...horariosBloqueadosLocales, ...horariosOcupadosApi])];  // sin duplicados
+  const horariosBloqueadosLocales = patronDiaSeleccionado ? [...(turnosOcupados[profesionalSeleccionado]?.[fechaSeleccionada] ?? []), ...bloqueosDeLaFecha(bloqueosPorFecha, profesionalSeleccionado, fechaSeleccionada, horariosDelDia)] : horariosDelDia;
+  const horariosNoDisponibles = [...new Set([...horariosBloqueadosLocales, ...horariosOcupadosApi])];  // sin duplicados
   // DISPONIBLES = todos los slots del día − los no disponibles
-  const availableSlots = daySlots.filter((s) => !unavailableSlots.includes(s));
+  const horariosLibres = horariosDelDia.filter((s) => !horariosNoDisponibles.includes(s));
   // Auto-ajuste de la hora elegida: si no quedan slots la limpia; si el
   // slot elegido dejó de estar disponible, elige el primero libre.
-  useEffect(() => { if (availableSlots.length === 0) { setSelectedTime(''); return; } if (!availableSlots.includes(selectedTime)) setSelectedTime(availableSlots[0]); }, [availableSlots, selectedTime]);
-  const selectedTimeIsTaken = selectedTime ? unavailableSlots.includes(selectedTime) : true;
+  useEffect(() => { if (horariosLibres.length === 0) { setHoraSeleccionada(''); return; } if (!horariosLibres.includes(horaSeleccionada)) setHoraSeleccionada(horariosLibres[0]); }, [horariosLibres, horaSeleccionada]);
+  const horaEstaOcupada = horaSeleccionada ? horariosNoDisponibles.includes(horaSeleccionada) : true;
   // Reglas de negocio aplicadas al día seleccionado:
-  const isSundayOrMonday = isBlockedWeekday(selectedDateObject.getDay());  // ¿cerrado ese día?
-  const isOutOfRange = selectedDateObject < calendarStart || selectedDateObject > calendarEnd;  // ¿fuera de hoy +30?
+  const esDomingoOLunes = esDiaCerrado(diaSeleccionado.getDay());  // ¿cerrado ese día?
+  const fueraDeRango = diaSeleccionado < calendarStart || diaSeleccionado > calendarEnd;  // ¿fuera de hoy +30?
 
   // ── Selección de fecha (validaciones) ──────────────
   // Se ejecuta al tocar un día del calendario. Valida: fecha válida,
   // dentro del rango [hoy, +30 días] y que no sea domingo/lunes.
   // Si algo falla, muestra el error y NO cambia la fecha seleccionada.
-  const handleCalendarChange = (nextDate) => {
+  const cambiarFechaCalendario = (nextDate) => {
     const nextDateObject = new Date(`${nextDate}T00:00:00`);
     if (Number.isNaN(nextDateObject.getTime())) return;
-    if (nextDateObject < calendarStart || nextDateObject > calendarEnd) { setFeedback({ type: 'error', message: 'Solo se pueden pedir turnos desde hoy hasta dentro de un mes.' }); return; }
-    if (isBlockedWeekday(nextDateObject.getDay())) { setFeedback({ type: 'error', message: 'No se pueden pedir turnos los domingos ni los lunes. Elegí de martes a sábado.' }); return; }
-    setSelectedDate(nextDate);
+    if (nextDateObject < calendarStart || nextDateObject > calendarEnd) { setAviso({ type: 'error', message: 'Solo se pueden pedir turnos desde hoy hasta dentro de un mes.' }); return; }
+    if (esDiaCerrado(nextDateObject.getDay())) { setAviso({ type: 'error', message: 'No se pueden pedir turnos los domingos ni los lunes. Elegí de martes a sábado.' }); return; }
+    setFechaSeleccionada(nextDate);
   };
 
   // ── Handlers de sesión (logout, login, registro, Google) ──
   // Logout: limpia estado + localStorage y vuelve a la pantalla de login.
-  const handleLogout = () => {
-    setToken(''); setCurrentUser(null); setConfirmedBookings([]);
+  const cerrarSesion = () => {
+    setToken(''); setCurrentUser(null); setTurnosConfirmados([]);
     try { localStorage.removeItem('token'); localStorage.removeItem('currentUser'); history.replaceState(null, '', window.location.pathname); } catch {}
-    setMainView('client'); setAuthScreen('login'); setLoginEmail(''); setLoginPassword('');
-    setRegisterForm({ firstName: '', lastName: '', email: '', password: '', whatsapp: '' });
-    setAuthFeedback({ type: 'idle', message: 'Primero iniciá sesión para acceder al turnero.' });
+    setVista('cliente'); setPantallaAcceso('ingreso'); setCorreoIngreso(''); setClaveIngreso('');
+    setFormularioRegistro({ nombre: '', apellido: '', email: '', telefono: '', password: '' });
+    setAvisoAcceso({ type: 'idle', message: 'Primero iniciá sesión para acceder al turnero.' });
   };
 
   // Login: manda usuario/mail + contraseña a POST /login. Según el `role`
   // que devuelva el backend arma un currentUser distinto:
   //   - admin  → { role: 'admin', ... } → vista de administración
-  //   - client → { role: 'client', ... } → turnero
+  //   - client → { role: 'cliente', ... } → turnero
   // En ambos casos guarda token + usuario en localStorage.
-  const handleLoginSubmit = async (event) => {
+  const iniciarSesion = async (event) => {
     event.preventDefault();
-    const cred = loginEmail.trim(), pass = loginPassword.trim();
-    if (!cred || !pass) { setAuthFeedback({ type: 'error', message: 'Completá usuario/mail y contraseña para iniciar sesión.' }); return; }
+    const cred = correoIngreso.trim(), pass = claveIngreso.trim();
+    if (!cred || !pass) { setAvisoAcceso({ type: 'error', message: 'Completá usuario/mail y contraseña para iniciar sesión.' }); return; }
     try {
-      setAuthFeedback({ type: 'idle', message: 'Iniciando sesión...' });
+      setAvisoAcceso({ type: 'idle', message: 'Iniciando sesión...' });
       const r = await loginCliente(cred, pass);
       if (r?.role === 'admin') {
         const admin = { idCliente: null, idAdmin: r.admin?.idAdmin ?? null, name: r.admin?.nombre ?? 'Administrador', email: r.admin?.email ?? cred, role: 'admin' };
         setToken(r.token); setCurrentUser(admin);
         try { localStorage.setItem('token', r.token); localStorage.setItem('currentUser', JSON.stringify(admin)); } catch {}
-        setMainView('admin'); setAuthFeedback({ type: 'success', message: 'Acceso de administrador habilitado.' });
+        setVista('admin'); setAvisoAcceso({ type: 'success', message: 'Acceso de administrador habilitado.' });
       } else {
-        const u = { idCliente: r.cliente?.idCliente ?? null, name: r.cliente?.nombre ?? cred.split('@')[0], email: cred, role: 'client', phone: r.cliente?.telefono ?? '' };
+        const u = { idCliente: r.cliente?.idCliente ?? null, name: r.cliente?.nombre ?? cred.split('@')[0], email: cred, role: 'cliente', phone: r.cliente?.telefono ?? '' };
         setToken(r.token); setCurrentUser(u);
         try { localStorage.setItem('token', r.token); localStorage.setItem('currentUser', JSON.stringify(u)); } catch {}
-        setMainView('client'); setAuthFeedback({ type: 'success', message: `Sesión iniciada con ${cred}.` });
+        setVista('cliente'); setAvisoAcceso({ type: 'success', message: `Sesión iniciada con ${cred}.` });
       }
-    } catch (error) { setAuthFeedback({ type: 'error', message: error.message || 'Credenciales incorrectas.' }); }
+    } catch (error) { setAvisoAcceso({ type: 'error', message: error.message || 'Credenciales incorrectas.' }); }
   };
 
   // ⚠️ "Continuar con Google" es SOLO un mock de prueba, NO el login real de
@@ -438,9 +438,9 @@ return () => { cancelado = true; };
   // pantalla de error y ahí se quedaba encerrado (esa pantalla no tenía ni
   // cerrar sesión). Ahora avisamos en vez de simular una sesión que no existe:
   // el mock queda para probar la UI sin loguearse de verdad.
-  const handleGoogleLogin = () => {
-    setAuthScreen('login');
-    setAuthFeedback({
+  const ingresarConGoogle = () => {
+    setPantallaAcceso('ingreso');
+    setAvisoAcceso({
       type: 'error',
       message: 'El acceso con Google todavía no está habilitado. Iniciá sesión con tu mail y contraseña, o registrate.',
     });
@@ -448,99 +448,99 @@ return () => { cancelado = true; };
 
   // Registro: crea la cuenta en la DB (POST /registro), vuelve a la pantalla
   // de login y pre-carga el mail para que el usuario solo escriba la clave.
-  const handleRegisterSubmit = async (event) => {
-    event.preventDefault(); const { firstName, lastName, email, password, whatsapp } = registerForm;
-    if (!firstName.trim() || !lastName.trim() || !email.trim() || !password.trim() || !whatsapp.trim()) { setAuthFeedback({ type: 'error', message: 'Completá nombre, apellido, mail, contraseña y whatsapp para registrarte.' }); return; }
+  const crearCuenta = async (event) => {
+    event.preventDefault(); const { nombre, apellido, email, telefono, password } = formularioRegistro;
+    if (!nombre.trim() || !apellido.trim() || !email.trim() || !password.trim() || !telefono.trim()) { setAvisoAcceso({ type: 'error', message: 'Completá nombre, apellido, mail, contraseña y whatsapp para registrarte.' }); return; }
     // El mismo mínimo de 8 que valida el server (server/validaciones.js).
     // Va del lado del cliente para no gastar un request y para que el mensaje
     // salga en la voz de la app y no en el del navegador.
-    if (password.length < 8) { setAuthFeedback({ type: 'error', message: 'La contraseña tiene que tener al menos 8 caracteres.' }); return; }
+    if (password.length < 8) { setAvisoAcceso({ type: 'error', message: 'La contraseña tiene que tener al menos 8 caracteres.' }); return; }
     try {
-      setAuthFeedback({ type: 'idle', message: 'Creando tu cuenta...' });
-      await registrarCliente({ nombre: firstName.trim(), apellido: lastName.trim(), email: email.trim(), telefono: whatsapp.trim(), password });
-      setAuthScreen('login'); setLoginEmail(email.trim()); setLoginPassword('');
-      setAuthFeedback({ type: 'success', message: `¡Cuenta creada! Ya podés iniciar sesión con ${email.trim()}.` });
-    } catch (error) { setAuthFeedback({ type: 'error', message: error.message || 'Error al registrar el cliente.' }); }
+      setAvisoAcceso({ type: 'idle', message: 'Creando tu cuenta...' });
+      await registrarCliente({ nombre: nombre.trim(), apellido: apellido.trim(), email: email.trim(), telefono: telefono.trim(), password });
+      setPantallaAcceso('ingreso'); setCorreoIngreso(email.trim()); setClaveIngreso('');
+      setAvisoAcceso({ type: 'success', message: `¡Cuenta creada! Ya podés iniciar sesión con ${email.trim()}.` });
+    } catch (error) { setAvisoAcceso({ type: 'error', message: error.message || 'Error al registrar el cliente.' }); }
   };
 
   // ── Reserva de turno ───────────────────────────────
   // Es el paso final del turnero. Re-valida todo por las dudas
   // (nombre+teléfono, cuenta vinculada a la DB, día habilitado, hora libre),
   // llama a POST /turnos y después refresca la disponibilidad y los turnos.
-  const handleSubmit = async (event) => {
+  const registrarTurno = async (event) => {
     event.preventDefault();
-    if (!customerName.trim() || !customerPhone.trim()) { setFeedback({ type: 'error', message: 'Completá tu nombre y teléfono para confirmar el turno.' }); return; }
-    if (!currentUser?.idCliente) { setFeedback({ type: 'error', message: 'Tu cuenta no está vinculada a un cliente de la base. Iniciá sesión con tu cuenta registrada.' }); return; }
-    if (isSundayOrMonday) { setFeedback({ type: 'error', message: 'No se pueden pedir turnos los domingos ni los lunes. Elegí de martes a sábado.' }); return; }
-    if (isOutOfRange) { setFeedback({ type: 'error', message: 'Solo se pueden pedir turnos desde hoy hasta dentro de un mes.' }); return; }
-    if (!selectedTime || selectedTimeIsTaken) { setFeedback({ type: 'error', message: 'Elegí un horario disponible antes de confirmar.' }); return; }
-    if (submitting) return;  // evita el doble envío con el botón
+    if (!nombreCliente.trim() || !telefonoCliente.trim()) { setAviso({ type: 'error', message: 'Completá tu nombre y teléfono para confirmar el turno.' }); return; }
+    if (!currentUser?.idCliente) { setAviso({ type: 'error', message: 'Tu cuenta no está vinculada a un cliente de la base. Iniciá sesión con tu cuenta registrada.' }); return; }
+    if (esDomingoOLunes) { setAviso({ type: 'error', message: 'No se pueden pedir turnos los domingos ni los lunes. Elegí de martes a sábado.' }); return; }
+    if (fueraDeRango) { setAviso({ type: 'error', message: 'Solo se pueden pedir turnos desde hoy hasta dentro de un mes.' }); return; }
+    if (!horaSeleccionada || horaEstaOcupada) { setAviso({ type: 'error', message: 'Elegí un horario disponible antes de confirmar.' }); return; }
+    if (enviando) return;  // evita el doble envío con el botón
     try {
       setSubmitting(true);
-      setFeedback({ type: 'idle', message: 'Confirmando tu turno...' });
-      await reservarTurno({ idCliente: currentUser.idCliente, idProfesional: selectedBarber, idServicio: selectedService, fecha: selectedDate, horaInicio: selectedTime, telefono: customerPhone.trim() }, token);
-      setFeedback({ type: 'success', message: `Turno confirmado para ${customerName.trim()} con ${currentBarber.name} (${currentService.name}, $${currentService.price.toLocaleString('es-AR')}) el ${selectedDateLabel.label} ${selectedDateLabel.date} a las ${selectedTime}.` });
-      setCustomerName(currentUser?.name ?? ''); setCustomerPhone(currentUser?.phone ?? ''); setSelectedTime('');
+      setAviso({ type: 'idle', message: 'Confirmando tu turno...' });
+      await reservarTurno({ idCliente: currentUser.idCliente, idProfesional: profesionalSeleccionado, idServicio: servicioSeleccionado, fecha: fechaSeleccionada, horaInicio: horaSeleccionada, telefono: telefonoCliente.trim() }, token);
+      setAviso({ type: 'success', message: `Turno confirmado para ${nombreCliente.trim()} con ${profesionalActual.name} (${servicioActual.name}, $${servicioActual.price.toLocaleString('es-AR')}) el ${fechaFormateada.label} ${fechaFormateada.date} a las ${horaSeleccionada}.` });
+      setNombreCliente(currentUser?.name ?? ''); setTelefonoCliente(currentUser?.phone ?? ''); setHoraSeleccionada('');
       // Refresca todo lo afectado por la nueva reserva:
       cargarDisponibilidad(); refrescarOcupados(); if (currentUser?.role === 'admin') await cargarTurnosAdmin(); else await cargarMisTurnos();
-    } catch (error) { setFeedback({ type: 'error', message: error.message || 'Error al reservar el turno.' }); }
+    } catch (error) { setAviso({ type: 'error', message: error.message || 'Error al reservar el turno.' }); }
     finally { setSubmitting(false); }  // siempre desbloquea el botón
   };
 
   // ── Datos derivados para vista del cliente ─────────
-  const occupancyCount = daySlots.length - availableSlots.length;  // cuántos slots del día están ocupados
-  const currentUserEmail = currentUser?.email ?? '';
+  const cantidadOcupados = horariosDelDia.length - horariosLibres.length;  // cuántos slots del día están ocupados
+  const emailUsuario = currentUser?.email ?? '';
   // Turnos del cliente logueado = los confirmadoBookings que son SUYOS
   //
   // OJO con el orden: la API los trae como `ORDER BY fecha DESC` (el más nuevo
-  // primero), y pendingBookings/expiredBookings heredan ese orden. Sin este
+  // primero), y turnosPendientes/turnosExpirados heredan ese orden. Sin este
   // sort, "el próximo turno" del banner era el MÁS LEJANO y la lista de
   // pendientes salía al revés. Se ordena por fecha + hora ascendente.
-  const currentUserBookings = useMemo(
-    () => confirmedBookings.filter((b) => b.ownerEmail === currentUserEmail).slice().sort((l, r) => `${l.bookingDate}T${l.time}`.localeCompare(`${r.bookingDate}T${r.time}`)),
-    [confirmedBookings, currentUserEmail]
+  const turnosDelUsuario = useMemo(
+    () => turnosConfirmados.filter((b) => b.emailCliente === emailUsuario).slice().sort((l, r) => `${l.fecha}T${l.hora}`.localeCompare(`${r.fecha}T${r.hora}`)),
+    [turnosConfirmados, emailUsuario]
   );
-  // pending = próximos / expired = pasados (según resolveBookingStatus)
-  const pendingBookings = currentUserBookings.filter((b) => b.status === 'pending');
-  const expiredBookings = currentUserBookings.filter((b) => b.status === 'expired'); const nextBookings = pendingBookings.slice(0, 3);  // los 3 próximos para el banner
+  // Confirmado = próximos / Expirado = pasados (según estadoDelTurno)
+  const turnosPendientes = turnosDelUsuario.filter((b) => b.estado === 'Confirmado');
+  const turnosExpirados = turnosDelUsuario.filter((b) => b.estado === 'Expirado'); const proximosTurnos = turnosPendientes.slice(0, 3);  // los 3 próximos para el banner
 
   // ── Cancelar y reprogramar turno (cliente) ─────────
   // Cancela el turno en la DB (estado → 'Cancelado') previa confirmación.
-  // La regla de las >24 h de antelación la valida canCancelBooking.js.
-  const handleCancelBooking = async (bookingId) => {
+  // La regla de las >24 h de antelación la valida sePuedeCancelar en funciones.js.
+  const anularTurno = async (bookingId) => {
     if (!window.confirm('¿Seguro que querés cancelar este turno?')) return;
-    try { await cancelarTurno(bookingId, token); setFeedback({ type: 'success', message: 'Turno cancelado correctamente.' }); cargarDisponibilidad(); refrescarOcupados(); if (currentUser?.role === 'admin') await cargarTurnosAdmin(); else await cargarMisTurnos(); }
-    catch (error) { if (error.status === 401) expulsarPorSesion(); else setFeedback({ type: 'error', message: error.message || 'Error al cancelar el turno.' }); }
+    try { await cancelarTurno(bookingId, token); setAviso({ type: 'success', message: 'Turno cancelado correctamente.' }); cargarDisponibilidad(); refrescarOcupados(); if (currentUser?.role === 'admin') await cargarTurnosAdmin(); else await cargarMisTurnos(); }
+    catch (error) { if (error.status === 401) expulsarPorSesion(); else setAviso({ type: 'error', message: error.message || 'Error al cancelar el turno.' }); }
   };
 
   // Reprograma: cambia fecha y/o hora con un PATCH a la API y actualiza en
   // local el turno con sus datos de calendario recalculados.
-  const handleRescheduleBooking = async (bookingId, bookingDate, time) => {
+  const reprogramarTurno = async (bookingId, fecha, hora) => {
     if (!window.confirm('¿Confirmás el nuevo día y horario?')) return;
     try {
-      setFeedback({ type: 'idle', message: 'Reprogramando tu turno...' });
-      await actualizarTurno(bookingId, { fecha: bookingDate, horaInicio: time }, token);
-      setConfirmedBookings((p) => p.map((b) => (b.id === bookingId ? { ...b, bookingDate, time, ...resolveCalendarDetails(bookingDate) } : b)));
+      setAviso({ type: 'idle', message: 'Reprogramando tu turno...' });
+      await actualizarTurno(bookingId, { fecha, horaInicio: hora }, token);
+      setTurnosConfirmados((p) => p.map((b) => (b.id === bookingId ? { ...b, fecha, hora, ...datosDelDia(fecha) } : b)));
       cargarDisponibilidad(); refrescarOcupados();
       await cargarMisTurnos();
-      setFeedback({ type: 'success', message: 'Turno reprogramado correctamente.' });
+      setAviso({ type: 'success', message: 'Turno reprogramado correctamente.' });
     } catch (error) {
       if (error.status === 401) expulsarPorSesion();
-      else setFeedback({ type: 'error', message: error.message || 'Error al reprogramar el turno.' });
+      else setAviso({ type: 'error', message: error.message || 'Error al reprogramar el turno.' });
     }
   };
 
   // ── CRUD profesionales (agregar, actualizar, eliminar) ──
   // Divide 'Juan Pérez' → { nombre: 'Juan', apellido: 'Pérez' }
   // porque en la DB el nombre y el apellido son campos separados.
-  const diviProfesionalNombre = (nombreCompleto) => {
+  const dividirNombre = (nombreCompleto) => {
     const partes = String(nombreCompleto).trim().split(/\s+/);
     return { nombre: partes[0] ?? '', apellido: partes.slice(1).join(' ') };
   };
   // Alta: crea el profesional, recarga las 2 listas y devuelve { ok }
   // para que el modal se cierre automáticamente si salió bien.
-  const handleAddBarber = async (nombreCompleto, email, telefono) => {
-    const { nombre, apellido } = diviProfesionalNombre(nombreCompleto);
+  const registrarProfesional = async (nombreCompleto, email, telefono) => {
+    const { nombre, apellido } = dividirNombre(nombreCompleto);
     try {
       await crearProfesional({ nombre, apellido, email: email?.trim() || null, telefono: telefono?.trim() || null }, token);
       await cargarProfesionales();
@@ -549,8 +549,8 @@ return () => { cancelado = true; };
     } catch (error) { if (error.status === 401) expulsarPorSesion(); return { ok: false, error: error.message || 'Error al agregar el profesional.' }; }
   };
   // Edita un profesional (misma lógica que el alta).
-  const handleUpdateBarber = async (id, nombreCompleto, email, telefono) => {
-    const { nombre, apellido } = diviProfesionalNombre(nombreCompleto);
+  const editarProfesional = async (id, nombreCompleto, email, telefono) => {
+    const { nombre, apellido } = dividirNombre(nombreCompleto);
     try {
       await actualizarProfesional(id, { nombre, apellido, email: email?.trim() || null, telefono: telefono?.trim() || null }, token);
       await cargarProfesionales();
@@ -560,7 +560,7 @@ return () => { cancelado = true; };
   };
   // Baja lógica (activo → 0): los turnos pasados se mantienen, pero ya no
   // recibe reservas nuevas.
-  const handleDeleteBarber = async (id) => {
+  const borrarProfesional = async (id) => {
     if (!window.confirm('¿Eliminar a este profesional? Sus turnos se mantienen, pero ya no recibirá reservas nuevas.')) return { ok: false };
     try {
       await eliminarProfesional(id, token);
@@ -570,50 +570,50 @@ return () => { cancelado = true; };
     } catch (error) { if (error.status === 401) expulsarPorSesion(); return { ok: false, error: error.message || 'Error al eliminar el profesional.' }; }
   };
   // Activar / desactivar (toggle del checkbox en el panel de admin).
-  const handleToggleBarberActivo = async (id, activo) => {
+  const cambiarActivoProfesional = async (id, activo) => {
     try {
       await actualizarProfesional(id, { activo: !activo }, token);
       await cargarProfesionales();
       await cargarTodosProfesionales();
       return true;
-    } catch (error) { if (error.status === 401) expulsarPorSesion(); else setFeedback({ type: 'error', message: error.message || 'Error al cambiar el estado del profesional.' }); return false; }
+    } catch (error) { if (error.status === 401) expulsarPorSesion(); else setAviso({ type: 'error', message: error.message || 'Error al cambiar el estado del profesional.' }); return false; }
   };
 
   // ── CRUD servicios (agregar, actualizar, eliminar) ──
   // Los tres devuelven true/false para que el modal cierre o muestre error.
-  const handleAddService = async (name, price, durationMinutes) => {
+  const registrarServicio = async (name, price, durationMinutes) => {
     try {
       await crearServicio({ nombre: name, precio: price, duracion_minutos: durationMinutes }, token);
       await cargarServicios();
       return true;
-    } catch (error) { if (error.status === 401) expulsarPorSesion(); else setFeedback({ type: 'error', message: error.message || 'Error al agregar el servicio.' }); return false; }
+    } catch (error) { if (error.status === 401) expulsarPorSesion(); else setAviso({ type: 'error', message: error.message || 'Error al agregar el servicio.' }); return false; }
   };
-  const handleUpdateService = async (id, name, price, durationMinutes) => {
+  const editarServicio = async (id, name, price, durationMinutes) => {
     try {
       await actualizarServicio(id, { nombre: name, precio: price, duracion_minutos: durationMinutes }, token);
       await cargarServicios();
       return true;
-    } catch (error) { if (error.status === 401) expulsarPorSesion(); else setFeedback({ type: 'error', message: error.message || 'Error al actualizar el servicio.' }); return false; }
+    } catch (error) { if (error.status === 401) expulsarPorSesion(); else setAviso({ type: 'error', message: error.message || 'Error al actualizar el servicio.' }); return false; }
   };
   // Borrado físico. Si el servicio tiene turnos asociados, el backend
   // responde error 547 (FK de SQL Server) y acá se muestra el aviso.
-  const handleDeleteService = async (id) => {
+  const borrarServicio = async (id) => {
     if (!window.confirm('¿Eliminar este servicio del catálogo?')) return false;
     try {
       await eliminarServicio(id, token);
       await cargarServicios();
       return true;
-    } catch (error) { if (error.status === 401) expulsarPorSesion(); else setFeedback({ type: 'error', message: error.message || 'Error al eliminar el servicio.' }); return false; }
+    } catch (error) { if (error.status === 401) expulsarPorSesion(); else setAviso({ type: 'error', message: error.message || 'Error al eliminar el servicio.' }); return false; }
   };
 
   // ── Guardar bloqueos y horarios laborales ──────────
   // Guarda los bloqueos del admin y RECARGA la lista desde la API para que
   // el calendario del cliente refleje el cambio al instante.
-  const handleSaveDateBlockouts = useCallback(async (barberId, fecha, body) => {
+  const guardarBloqueosFecha = useCallback(async (idProfesional, fecha, body) => {
     try {
-      await guardarBloqueos(barberId, { fecha, ...body }, token);
+      await guardarBloqueos(idProfesional, { fecha, ...body }, token);
       const b = await obtenerBloqueos(token);
-      if (Array.isArray(b)) setDateBlockouts(b);
+      if (Array.isArray(b)) setBloqueosPorFecha(b);
       return true;
     } catch (error) {
       if (error?.status === 401) expulsarPorSesion();
@@ -622,9 +622,9 @@ return () => { cancelado = true; };
   }, [token, expulsarPorSesion]);
   // Igual que el anterior pero para el horario SEMANAL del profesional
   // (hasta 2 bloques por día). También recarga para reflejar el cambio.
-  const handleSaveHorarios = useCallback(async (barberId, horarios) => {
+  const guardarHorariosSemanales = useCallback(async (idProfesional, horarios) => {
     try {
-      await guardarHorarios(barberId, horarios, token);
+      await guardarHorarios(idProfesional, horarios, token);
       const h = await obtenerHorarios(token);
       if (Array.isArray(h)) setHorarioLaboral(h);
       return true;
@@ -638,57 +638,56 @@ return () => { cancelado = true; };
   // y datos del cliente. Solo envía los campos que vienen definidos.
   // Después actualiza la lista local con los nombres nuevos de barbero/
   // servicio y recarga todo por API para quedar sincronizado.
-  const handleUpdateBooking = async (bookingId, updates) => {
+  const editarTurno = async (bookingId, updates) => {
     try {
-      setFeedback({ type: 'idle', message: 'Guardando el turno...' });
+      setAviso({ type: 'idle', message: 'Guardando el turno...' });
       await actualizarTurno(bookingId, {
-        idProfesional: updates.barberId ? Number(updates.barberId) : undefined,
-        idServicio: updates.serviceId ? Number(updates.serviceId) : undefined,
-        fecha: updates.bookingDate || undefined,
-        horaInicio: updates.time || undefined,
-        // 'confirmed' ya no se manda: no es un estado real (ver bookingStatusOptions
-        // en Admin.jsx). Los valores válidos son los que mapea mapaEstado() del
-        // backend a las columnas de la DB.
-        estado: ['pending', 'completed', 'no-show', 'cancelled'].includes(updates.status) ? updates.status : undefined,
-        nombreCliente: updates.customerName !== undefined ? updates.customerName : undefined,
-        telefono: updates.customerPhone,
+        idProfesional: updates.idProfesional ? Number(updates.idProfesional) : undefined,
+        idServicio: updates.idServicio ? Number(updates.idServicio) : undefined,
+        fecha: updates.fecha || undefined,
+        horaInicio: updates.hora || undefined,
+        // 'confirmed' ya no se manda: no es un estado real (ver opcionesEstado
+        // en Admin.jsx). Los valores válidos coinciden con los que valida el backend.
+        estado: ['Confirmado', 'Completado', 'NoSePresento', 'Cancelado'].includes(updates.estado) ? updates.estado : undefined,
+        nombreCliente: updates.nombreCliente !== undefined ? updates.nombreCliente : undefined,
+        telefono: updates.telefonoCliente,
       }, token);
-      setConfirmedBookings((p) => p.map((b) => { if (b.id !== bookingId) return b; const nb = barbers.find((x) => x.id === Number(updates.barberId)) ?? barbers[0]; const ns = services.find((x) => x.id === Number(updates.serviceId)) ?? services[0]; return { ...b, ...updates, barberId: updates.barberId != null ? Number(updates.barberId) : b.barberId, barberName: nb?.name ?? b.barberName, serviceName: ns?.name ?? b.serviceName, servicePrice: ns?.price ?? b.servicePrice, ...resolveCalendarDetails(updates.bookingDate) }; }));
+      setTurnosConfirmados((p) => p.map((b) => { if (b.id !== bookingId) return b; const nb = profesionales.find((x) => x.id === Number(updates.idProfesional)) ?? profesionales[0]; const ns = servicios.find((x) => x.id === Number(updates.idServicio)) ?? servicios[0]; return { ...b, ...updates, idProfesional: updates.idProfesional != null ? Number(updates.idProfesional) : b.idProfesional, nombreProfesional: nb?.name ?? b.nombreProfesional, nombreServicio: ns?.name ?? b.nombreServicio, precioServicio: ns?.price ?? b.precioServicio, ...datosDelDia(updates.fecha) }; }));
       await cargarTurnosAdmin(); refrescarOcupados();
-      setFeedback({ type: 'success', message: 'Turno actualizado en la base de datos.' });
+      setAviso({ type: 'success', message: 'Turno actualizado en la base de datos.' });
       return true;
     } catch (error) {
       if (error.status === 401) expulsarPorSesion();
-      else setFeedback({ type: 'error', message: error.message || 'Error al actualizar el turno.' });
+      else setAviso({ type: 'error', message: error.message || 'Error al actualizar el turno.' });
       return false;
     }
   };
   // Borrado definitivo del turno (delete físico en la DB, con confirmación).
-  const handleDeleteBooking = async (bookingId) => {
+  const borrarTurno = async (bookingId) => {
     if (!window.confirm('¿Eliminar este turno definitivamente?')) return;
     try {
       await eliminarTurno(bookingId, token);
-      setConfirmedBookings((p) => p.filter((b) => b.id !== bookingId));
+      setTurnosConfirmados((p) => p.filter((b) => b.id !== bookingId));
       cargarDisponibilidad(); refrescarOcupados();
       await cargarTurnosAdmin();
-      setFeedback({ type: 'success', message: 'Turno eliminado definitivamente.' });
+      setAviso({ type: 'success', message: 'Turno eliminado definitivamente.' });
     } catch (error) {
       if (error.status === 401) expulsarPorSesion();
-      else setFeedback({ type: 'error', message: error.message || 'Error al eliminar el turno.' });
+      else setAviso({ type: 'error', message: error.message || 'Error al eliminar el turno.' });
     }
   };
   // ── Navegación entre vistas (cliente, mis turnos) ──
   // Cambia la vista del cliente usando el hash de la URL (#mis-turnos).
   // history.pushState permite que el botón atrás del navegador funcione.
-  const handleShowMyBookings = () => { setMainView('my-bookings'); try { history.pushState({ view: 'my-bookings' }, '', '#mis-turnos'); } catch {} };
-  const handleBackToClient = () => { setMainView('client'); try { history.pushState({ view: 'client' }, '', window.location.pathname); } catch {} };
+  const verMisTurnos = () => { setVista('mis-turnos'); try { history.pushState({ view: 'mis-turnos' }, '', '#mis-turnos'); } catch {} };
+  const volverAlCliente = () => { setVista('cliente'); try { history.pushState({ view: 'cliente' }, '', window.location.pathname); } catch {} };
 
   // Escucha el evento 'popstate' (botón atrás/adelante del navegador) y
   // sincroniza la vista con el hash actual de la URL.
   useEffect(() => {
     const onPop = () => {
       const isMyBookings = window.location.hash === '#mis-turnos';
-      setMainView(isMyBookings ? 'my-bookings' : 'client');
+      setVista(isMyBookings ? 'mis-turnos' : 'cliente');
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -698,11 +697,11 @@ return () => { cancelado = true; };
   // 1) SIN SESIÓN  → IniciarSesion (login/registro) + botón WhatsApp.
   // 2) CLIENTE (y aún cargando datos) → pantalla "Cargando datos...".
   // 3) ADMIN       → Admin.jsx con todos los handlers del panel.
-  // 4) CLIENTE     → 'my-bookings' → MisTurnos (historial y cancelación)
-  //                  → 'client'     → Inicio (el turnero de 5 pasos)
-  if (!isAuthenticated) return (
+  // 4) CLIENTE     → 'mis-turnos' → MisTurnos (historial y cancelación)
+  //                  → 'cliente'     → Inicio (el turnero de 5 pasos)
+  if (!sesionIniciada) return (
     <>
-      <IniciarSesion authScreen={authScreen} authFeedback={authFeedback} handleGoogleLogin={handleGoogleLogin} handleLoginSubmit={handleLoginSubmit} handleRegisterSubmit={handleRegisterSubmit} loginEmail={loginEmail} loginPassword={loginPassword} onShowLogin={() => setAuthScreen('login')} onShowRegister={() => setAuthScreen('register')} registerForm={registerForm} setLoginEmail={setLoginEmail} setLoginPassword={setLoginPassword} setRegisterForm={setRegisterForm} />
+      <IniciarSesion pantallaAcceso={pantallaAcceso} avisoAcceso={avisoAcceso} ingresarConGoogle={ingresarConGoogle} iniciarSesion={iniciarSesion} crearCuenta={crearCuenta} correoIngreso={correoIngreso} claveIngreso={claveIngreso} onMostrarIngreso={() => setPantallaAcceso('ingreso')} onMostrarRegistro={() => setPantallaAcceso('registro')} formularioRegistro={formularioRegistro} setCorreoIngreso={setCorreoIngreso} setClaveIngreso={setClaveIngreso} setFormularioRegistro={setFormularioRegistro} />
       <WhatsApp />
     </>
   );
@@ -714,9 +713,9 @@ return () => { cancelado = true; };
   // con el error: sin cabecera, sin botón de cerrar sesión, sin reintentar.
   // El que caía acá quedaba atrapado y lo único que le funcionaba era borrar
   // el localStorage a mano desde la consola del navegador. Peor: el login mock
-  // de Google (handleGoogleLogin) guarda un token que el backend no reconoce,
+  // de Google (ingresarConGoogle) guarda un token que el backend no reconoce,
   // así que sus 6 requests dan 401 y caenan acá para siempre.
-  if (currentUser?.role !== 'admin' && (barbers.length === 0 || services.length === 0)) return (
+  if (currentUser?.role !== 'admin' && (profesionales.length === 0 || servicios.length === 0)) return (
     <main className="simple-page" style={{ display: 'grid', placeItems: 'center', alignContent: 'center', gap: '1.5rem', minHeight: '100svh', textAlign: 'center' }}>
       <div style={{ display: 'grid', gap: '0.65rem', maxWidth: '34rem' }}>
         <p role="alert" style={{ color: errorCarga ? 'var(--err)' : 'var(--text-mid)', margin: 0 }}>
@@ -739,7 +738,7 @@ return () => { cancelado = true; };
           </button>
           <button
             type="button"
-            onClick={handleLogout}
+            onClick={cerrarSesion}
             style={{ minHeight: '48px', padding: '0 1.6rem', borderRadius: 'var(--radius-sm)', background: 'var(--card-soft)', color: 'var(--text-hi)', border: '1px solid var(--line)', fontWeight: 600, cursor: 'pointer' }}
           >
             Cerrar sesión
@@ -751,11 +750,11 @@ return () => { cancelado = true; };
   return (
     <>
       {currentUser?.role === 'admin' ? (
-        <Admin allBarbers={allBarbers} barbers={barbers} bookings={confirmedBookings} currentUser={currentUser} dateBlockouts={dateBlockouts} errorCarga={errorCarga} horarioLaboral={horarioLaboral} onAddBarber={handleAddBarber} onAddService={handleAddService} onDeleteBarber={handleDeleteBarber} onDeleteBooking={handleDeleteBooking} onDeleteService={handleDeleteService} onLogout={handleLogout} onSaveDateBlockouts={handleSaveDateBlockouts} onSaveHorarios={handleSaveHorarios} onToggleBarberActivo={handleToggleBarberActivo} onUpdateBarber={handleUpdateBarber} onUpdateBooking={handleUpdateBooking} onUpdateService={handleUpdateService} services={services} timeSlots={timeSlots} />
-      ) : mainView === 'my-bookings' ? (
-        <MisTurnos calendarMax={toIsoDate(calendarEnd)} calendarMin={initialCalendarDate} canCancelBooking={canCancelBooking} currentUser={currentUser} dateBlockouts={dateBlockouts} expiredBookings={expiredBookings} horarioLaboral={horarioLaboral} onBack={handleBackToClient} onCancelBooking={handleCancelBooking} onReschedule={handleRescheduleBooking} pendingBookings={pendingBookings} takenSlots={takenSlots} timeSlots={timeSlots} />
+        <Admin todosProfesionales={todosProfesionales} profesionales={profesionales} turnos={turnosConfirmados} currentUser={currentUser} bloqueosPorFecha={bloqueosPorFecha} errorCarga={errorCarga} horarioLaboral={horarioLaboral} onRegistrarProfesional={registrarProfesional} onRegistrarServicio={registrarServicio} onBorrarProfesional={borrarProfesional} onBorrarTurno={borrarTurno} onBorrarServicio={borrarServicio} onCerrarSesion={cerrarSesion} onGuardarBloqueos={guardarBloqueosFecha} onGuardarHorarios={guardarHorariosSemanales} onCambiarActivoProfesional={cambiarActivoProfesional} onEditarProfesional={editarProfesional} onEditarTurno={editarTurno} onEditarServicio={editarServicio} servicios={servicios} horariosFijos={horariosFijos} />
+      ) : vista === 'mis-turnos' ? (
+        <MisTurnos calendarMax={fechaAIso(calendarEnd)} calendarMin={initialCalendarDate} sePuedeCancelar={sePuedeCancelar} currentUser={currentUser} bloqueosPorFecha={bloqueosPorFecha} turnosExpirados={turnosExpirados} horarioLaboral={horarioLaboral} onVolver={volverAlCliente} onCancelarTurno={anularTurno} onReprogramarTurno={reprogramarTurno} turnosPendientes={turnosPendientes} turnosOcupados={turnosOcupados} horariosFijos={horariosFijos} />
       ) : (
-        <Inicio availableSlots={availableSlots} barbers={barbers} currentBarber={currentBarber} currentService={currentService} currentDay={currentDay} customerName={customerName} customerPhone={customerPhone} dateBlockouts={dateBlockouts} daySlots={daySlots} horarioLaboral={horarioLaboral} feedback={feedback} handleSubmit={handleSubmit} loadingAvailability={loadingAvailability} nextBookings={nextBookings} occupancyCount={occupancyCount} onLogout={handleLogout} onShowMyBookings={handleShowMyBookings} currentUser={currentUser} selectedBarber={selectedBarber} selectedService={selectedService} selectedDate={selectedDate} selectedTime={selectedTime} selectedTimeIsTaken={selectedTimeIsTaken} setCustomerName={setCustomerName} setCustomerPhone={setCustomerPhone} setSelectedBarber={setSelectedBarber} setSelectedService={setSelectedService} setSelectedDate={handleCalendarChange} setSelectedTime={setSelectedTime} services={services} submitting={submitting} timeSlots={timeSlots} unavailableSlots={unavailableSlots} takenSlots={takenSlots} dayCalendarMin={initialCalendarDate} dayCalendarMax={toIsoDate(calendarEnd)} />
+        <Inicio horariosLibres={horariosLibres} profesionales={profesionales} profesionalActual={profesionalActual} servicioActual={servicioActual} diaActual={diaActual} nombreCliente={nombreCliente} telefonoCliente={telefonoCliente} bloqueosPorFecha={bloqueosPorFecha} horariosDelDia={horariosDelDia} horarioLaboral={horarioLaboral} aviso={aviso} registrarTurno={registrarTurno} cargandoDisponibilidad={cargandoDisponibilidad} proximosTurnos={proximosTurnos} cantidadOcupados={cantidadOcupados} onCerrarSesion={cerrarSesion} onVerMisTurnos={verMisTurnos} currentUser={currentUser} profesionalSeleccionado={profesionalSeleccionado} servicioSeleccionado={servicioSeleccionado} fechaSeleccionada={fechaSeleccionada} horaSeleccionada={horaSeleccionada} horaEstaOcupada={horaEstaOcupada} setNombreCliente={setNombreCliente} setTelefonoCliente={setTelefonoCliente} setProfesionalSeleccionado={setProfesionalSeleccionado} setServicioSeleccionado={setServicioSeleccionado} setFechaSeleccionada={cambiarFechaCalendario} setHoraSeleccionada={setHoraSeleccionada} servicios={servicios} enviando={enviando} horariosFijos={horariosFijos} horariosNoDisponibles={horariosNoDisponibles} turnosOcupados={turnosOcupados} diaCalendarMin={initialCalendarDate} diaCalendarMax={fechaAIso(calendarEnd)} />
       )}
       <WhatsApp />
     </>

@@ -360,7 +360,7 @@
 /* ── WhatsApp flotante y Mis turnos (reprogramar) ───── */
 /* .whatsapp-float es el botón fijo en la esquina (siempre visible, incluso
    sin sesión). Lo de Mis turnos: .booking-item por turno, .booking-countdown
-   para el texto "En 2 días a las 10:00" (formatCountdown), .booking-lock para
+   para el texto "En 2 días a las 10:00" (formatoCuentaRegresiva), .booking-lock para
    el turno que ya no se puede tocar (< 24 h) y .reschedule-* para el panel
    de reprogramación abierto. */
 .whatsapp-float { position: fixed; right: 22px; bottom: 22px; z-index: 60; width: 60px; height: 60px; border-radius: 999px; display: grid; place-items: center; background: linear-gradient(135deg, #25d366 0%, #128c7e 100%); color: #fff; box-shadow: 0 16px 40px rgba(18, 140, 126, 0.4); transition: transform 200ms ease, box-shadow 200ms ease; }

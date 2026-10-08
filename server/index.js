@@ -19,7 +19,7 @@
 //     (protege contra ataques de fuerza bruta a contraseñas)
 //
 // RUTAS: se montan sin prefijo, cada archivo define sus propios paths
-// (rutasAuth, rutasClientes, rutasTurnos, rutasProfesionales, rutasServicios).
+// (rutasSesion, rutasClientes, rutasTurnos, rutasProfesionales, rutasServicios).
 //
 // Si una ruta no matchea ninguna → 404. Si algo lanza excepción → 500
 // (los errores se loguean en consola pero NO se filtran al cliente).
@@ -33,7 +33,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 
-const rutasAuth = require("./rutas/rutasAuth");
+const rutasSesion = require("./rutas/rutasSesion");
 const rutasClientes = require("./rutas/rutasClientes");
 const rutasTurnos = require("./rutas/rutasTurnos");
 const rutasProfesionales = require("./rutas/rutasProfesionales");
@@ -96,7 +96,7 @@ app.use(["/login", "/registro"], authLimiter);
 // ── Rutas ─────────────────────────────────────────────
 // Cada router se registra con app.use sin prefijo. El path final de cada
 // endpoint está definido dentro del router (ej. router.get("/login", ...)).
-app.use(rutasAuth);
+app.use(rutasSesion);
 app.use(rutasClientes);
 app.use(rutasTurnos);
 app.use(rutasProfesionales);

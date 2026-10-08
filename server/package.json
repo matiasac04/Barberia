@@ -1,7 +1,7 @@
 {
-  "name": "mi-proyecto",
+  "name": "mi-barberia-server",
   "version": "1.0.0",
-  "description": "",
+  "description": "Backend de la barbería (Express + SQL Server)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",

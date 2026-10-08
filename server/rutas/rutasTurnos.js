@@ -16,7 +16,7 @@
 //   DELETE /turnos/:id             → borrado físico (solo admin)
 //
 // REGLA DE NEGOCIO VALIDADA AQUÍ (la 24 h):
-// El frontend la aplica con canCancelBooking, pero eso SOLO alcanza a la UI:
+// El frontend la aplica con sePuedeCancelar, pero eso SOLO alcanza a la UI:
 // cualquiera podría llamar a la API a mano y cancelar un turno para dentro
 // de una hora. Por eso la misma regla se valida acá, en el servidor, que es
 // el que decide de verdad. El admin queda exceptuado (puede tocar cualquier
@@ -41,7 +41,7 @@
 // "Mon Jan 01 1970 09:30:00 GMT-0300…" y devolvía ''. Como el código hace
 // `.filter(Boolean)`, la lista de horas ocupadas quedaba VACÍA sin dar ningún
 // error: el calendario pintaba todos los días "libre" y el cliente no podía
-// cancelar ni reprogramar (canCancelBooking necesita la hora). Por eso TODA
+// cancelar ni reprogramar (sePuedeCancelar necesita la hora). Por eso TODA
 // consulta que devuelve una hora la convierte con CONVERT(varchar(5), ..., 108)
 // → 'HH:MM'. Si agregás un SELECT que devuelva horaInicio u horaFin, hacelo
 // con CONVERT también.
@@ -52,7 +52,7 @@ const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 const { errorFecha, errorId } = require("../validaciones");
 
 // ── Regla de negocio: 24 h de antelación ─────────────
-// El frontend la aplica con canCancelBooking (src/utilidades/ayudantes.js),
+// El frontend la aplica con sePuedeCancelar (src/utilidades/funciones.js),
 // pero eso alcanza SOLO a la UI: cualquiera podría llamar a la API a mano y
 // cancelar o reprogramar un turno para dentro de una hora. Por eso la misma
 // regla se valida acá, en el servidor, que es el que decide de verdad.
@@ -118,7 +118,7 @@ const desdeMinutos = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:
 // profesional realmente atiende ese día.
 //   - Si tiene filas en HorarioLaboral → genera los slots de 30' de cada bloque.
 //   - Si NO tiene ninguna → devuelve SLOTS_FALLBACK (mismo criterio que
-//     getWeeklySlots del frontend).
+//     horariosDeLaSemana del frontend).
 // OJO: horaEntrada/horaSalida vienen CONVERTidas a varchar, porque en crudo son
 // objetos Date de tedious (ver la nota de TIME en la cabecera).
 const slotsAtendiblesDelDia = async (db, idProfesional, diaSemana) => {
@@ -463,13 +463,15 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     if (estado !== undefined && req.user.role !== 'admin') {
       return res.status(403).json({ error: "Solo el administrador puede cambiar el estado de un turno." });
     }
-    // Y tiene que ser uno de los que el frontend manda. Antes se guardaba el
-    // string crudo si no coincidía con el mapa, y un estado inventado cuenta
-    // como "NO cancelado" en los cinco filtros `estado <> 'Cancelado'`: el
-    // slot quedaba bloqueado para siempre sin que nada lo explicara.
+    // Y tiene que ser uno de los que el frontend manda. Antes guardaba el
+    // estado en inglés y lo traducía con un mapa acá; ahora el frontend usa
+    // directo los valores de la DB (español), así que se valida contra ellos.
+    // Un estado inventado cuenta como "NO cancelado" en los cinco filtros
+    // `estado <> 'Cancelado'`: el slot quedaría bloqueado para siempre sin
+    // que nada lo explicara.
     if (estado !== undefined) {
-      const mapaEstados = { pending: 'Confirmado', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'NoSePresento', cancelled: 'Cancelado' };
-      if (!Object.prototype.hasOwnProperty.call(mapaEstados, estado)) {
+      const estadosValidos = ['Confirmado', 'Completado', 'NoSePresento', 'Cancelado'];
+      if (!estadosValidos.includes(estado)) {
         return res.status(400).json({ error: "El estado indicado no es válido." });
       }
     }
@@ -567,13 +569,12 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       // ocupación no dependen de cómo lo escribió el cliente.
       if (horaInicio !== undefined) { set.push("horaInicio = @horaInicio"); reqPatch.input("horaInicio", sql.VarChar, horaFinal); }
       if (estado !== undefined) {
-        // Traduce el estado del frontend (inglés) al de la DB (español).
-        // 'expired' no está: es un estado LÓGICO del frontend (turno que ya
-        // pasó), no algo que se guarde. Ya se validó arriba que la clave
-        // existe, así que la traduzco directo.
-        const mapaEstado = { pending: 'Confirmado', confirmed: 'Confirmado', completed: 'Completado', 'no-show': 'NoSePresento', cancelled: 'Cancelado' };
+        // Se guarda el valor en español directo (los mismos de la DB).
+        // 'Expirado' no está: es un estado LÓGICO del frontend (turno que ya
+        // pasó), no algo que se guarde. Ya se validó arriba que el estado
+        // viene en la lista, así que se inserta tal cual.
         set.push("estado = @estado");
-        reqPatch.input("estado", sql.VarChar, mapaEstado[estado]);
+        reqPatch.input("estado", sql.VarChar, estado);
       }
       if (set.length > 0) await reqPatch.query(`UPDATE Turno SET ${set.join(", ")} WHERE idTurno = @id`);
 

@@ -14,8 +14,8 @@
 //   sin perder el estado de la app).
 //
 // OJO: acá NO va la URL del backend. El frontend apunta a http://localhost:3000
-// desde src/servicios/api.js. Lo único configurable por entorno es VITE_API_URL,
-// que api.js lee con import.meta.env (ver ese archivo).
+// desde src/servicios/consultas.js. Lo único configurable por entorno es VITE_API_URL,
+// que consultas.js lee con import.meta.env (ver ese archivo).
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 

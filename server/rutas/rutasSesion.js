@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// server/rutas/rutasAuth.js — REGISTRO, LOGIN Y VERIFICACIÓN DE TOKEN
+// server/rutas/rutasSesion.js — REGISTRO, LOGIN Y VERIFICACIÓN DE TOKEN
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
 //

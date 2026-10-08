@@ -13,21 +13,21 @@ Spa de barbería (reservas de turnos) en React 19 + Vite 8, sin TypeScript, con 
 - No hay tests ni script de test.
 
 ## Arquitectura / flujo
-- El frontend llama a `src/servicios/api.js` (helper `peticion()`), que hace `fetch` a `http://localhost:3000`.
+- El frontend llama a `src/servicios/consultas.js` (helper `peticion()`), que hace `fetch` a `http://localhost:3000`.
 - El server (`server/index.js`) monta las rutas JWT-protected (registrar/login, turnos, profesionales, servicios, horarios y bloqueos) desde `server/rutas/`.
 - Auth: JWT firmado en `server/autenticacion.js`, secret en `server/.env` (`JWT_SECRET`).
 - `currentUser.role` en `App.jsx` decide si se renderiza `Admin` o el turnero del cliente.
 
 ## Reglas de dominio
-- Domingos y lunes cerrados (`isBlockedWeekday`), ventana de reservas: hoy + 30 días (App.jsx:11-15).
-- Horarios fijos en `timeSlots` (src/datos/semilla.js): de 09:00–12:00 y 15:00–17:00 (con break de almuerzo). Activos si no hay `HorarioLaboral` en la DB.
-- Disponibilidad = `timeSlots` menos bloqueos + horarios ya reservados (App.jsx:75-85).
-- Las cancelaciones solo se permiten con >24 h de antelación (`canCancelBooking`, src/utilidades/ayudantes.js:62).
+- Domingos y lunes cerrados (`esDiaCerrado`), ventana de reservas: hoy + 30 días (App.jsx:11-15).
+- Horarios fijos en `horariosFijos` (src/datos/semilla.js): de 09:00–12:00 y 15:00–17:00 (con break de almuerzo). Activos si no hay `HorarioLaboral` en la DB.
+- Disponibilidad = `horariosFijos` menos bloqueos + horarios ya reservados (App.jsx:75-85).
+- Las cancelaciones solo se permiten con >24 h de antelación (`sePuedeCancelar`, src/utilidades/funciones.js:62).
 
 ## Fuentes de verdad del estado
-- Datos seed: `src/datos/semilla.js` (`barbers`, `services`, `timeSlots`, `initialTakenSlots`). Son fallback de arranque; la DB es la fuente real.
-- Lógica de fechas/agenda: `src/utilidades/ayudantes.js`.
-- Estado global y flujo de pantallas (`client` / `admin` / `my-bookings`): `src/App.jsx`.
+- Horario fijo de respaldo: `src/datos/semilla.js` (`horariosFijos`). Son fallback de arranque; la DB es la fuente real.
+- Lógica de fechas/agenda: `src/utilidades/funciones.js`.
+- Estado global y flujo de pantallas (`cliente` / `admin` / `mis-turnos`): `src/App.jsx`.
 - `crypto.randomUUID()` para IDs, `structuredClone()` para copias de estado.
 
 ## Convenciones

@@ -45,12 +45,12 @@ require('dotenv').config();
 const sql = require('mssql');
 
 // Datos de conexión leídos desde server/.env:
-//   usuario_bd, psw_bd, servido_bd (el servidor), nombre_bd (la base).
+//   usuario_bd, psw_bd, servidor_bd (el servidor), nombre_bd (la base).
 // La base está en la nube (SQL Server en Somee), no local.
 const config = {
     user: process.env.usuario_bd,
     password: process.env.psw_bd,
-    server: process.env.servido_bd,
+    server: process.env.servidor_bd,
     database: process.env.nombre_bd,        
     options: {
         encrypt: true,                // cifra la conexión (obligatorio en la nube)

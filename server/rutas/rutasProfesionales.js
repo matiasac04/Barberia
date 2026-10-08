@@ -280,7 +280,7 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
 // ── Bloqueos por fecha ────────────────────────────────
 // GET /bloqueos — todos los bloqueos (con token). Fecha como texto
 // 'YYYY-MM-DD'. El frontend los usa para tapar slots en el calendario y en
-// el cálculo de disponibles (getDayFreeSlots).
+// el cálculo de disponibles (horariosLibresDelDia).
 router.get("/bloqueos", jwtMiddleware, async (req, res) => {
   try {
     const db = await getPool();
@@ -299,7 +299,7 @@ router.get("/bloqueos", jwtMiddleware, async (req, res) => {
 // POST /profesionales/:id/bloqueos — reemplaza los bloqueos de UN DÍA
 // (solo admin). Body: { fecha, diaCompleto?, slots? }.
 //   - diaCompleto: true  → inserta UNA fila con hora = NULL. El frontend lo
-//     interpreta como "todo el día bloqueado" (getDateBlockedSlots).
+//     interpreta como "todo el día bloqueado" (bloqueosDeLaFecha).
 //   - slots: [...]       → inserta una fila por horario.
 // Siempre borra primero las de esa fecha, así el admin puede "desbloquear
 // todo" mandando slots: [] sin borrar filas a mano. Va en transacción.

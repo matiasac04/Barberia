@@ -1,65 +1,45 @@
 // ═══════════════════════════════════════════════════════════════════
-// AGENDA (admin) — vista cronológica filtrable de la operación
+// PANEL DE AGENDA (admin) — turnos del día agrupados por fecha
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
 //
-// A diferencia del panel Turnos (que es un formulario de edición), la
-// Agenda es SOLO LECTURA: muestra el día a día para ver la carga de trabajo.
-//
-// 1. App.jsx ya calculó `agendaGroups` = [[fecha, [turnos]], ...] agrupado
-//    por fecha y SIN los cancelados, ordenado cronológicamente.
-// 2. Acá se filtra por profesional (filterBarber = 'all' o id). El filtro
-//    también limpia los grupos que quedan vacíos para no mostrar días sin
-//    turnos tras filtrar.
-// 3. `total` cuenta los turnos visibles (ya filtrados) y se muestra arriba.
-// 4. Cada día es una <section> con sus turnos: hora + cliente, barbero,
-//    servicio, teléfono (o "no cargado" si no hay) y el estado (chip).
-//
-// Es una vista derivada: no pide datos, solo reordena/agrupa/lo que recibe.
-import { useMemo, useState } from 'react';
-function Agenda({ agendaGroups, barbers, bookingStatusLabels }) {
-  // ── Filtro por profesional ────────────────────────
-  // 'all' = sin filtro; si no, es el idProfesional que se está filtrando
-  const [filterBarber, setFilterBarber] = useState('all');
-  // useMemo: reagrupa/recorta solo cuando cambia la agenda o el filtro
-  const filteredGroups = useMemo(() => {
-    if (filterBarber === 'all') return agendaGroups;
-    return agendaGroups
-      .map(([date, dayBookings]) => [date, dayBookings.filter((b) => String(b.barberId) === filterBarber)])
-      .filter(([, dayBookings]) => dayBookings.length > 0);
-  }, [agendaGroups, filterBarber]);
-  // Total de turnos visibles (suma los grupos ya filtrados)
-  const total = filteredGroups.reduce((n, [, db]) => n + db.length, 0);
+// Muestra la grilla de turnos para tener la agenda de un vistazo.
+// Admin.jsx ya le entrega `gruposAgenda` (turnos por fecha, ordenados
+// de menor a mayor por fecha+hora). Acá se tienen en cuenta los
+// cancelados: en App.jsx relanzar al hijo no se hace, en cambio
+// Admin.jsx filtra el estado 'Cancelado' a la hora de agrupar, así que
+// en esta pantalla NUNCA aparece un turno cancelado.
+import { useMemo } from 'react';
+
+function Agenda({ gruposAgenda, profesionales, etiquetasEstado, clasesEstado }) {
+  const profesionalesPorId = useMemo(() => new Map(profesionales.map((b) => [String(b.id), b])), [profesionales]);
   return (
     <article className="simple-card admin-panel">
       <h2>Agenda</h2>
-      <p className="admin-note">Vista cronológica de los turnos que todavía están activos en la operación. Podés filtrar por profesional.</p>
-      <div className="admin-agenda-filter">
-        <label htmlFor="agenda-barber">Peluquero</label>
-        <select id="agenda-barber" value={filterBarber} onChange={(e) => setFilterBarber(e.target.value)}>
-          <option value="all">Todos</option>
-          {barbers.map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
-        </select>
-        <span className="admin-agenda-count">{total} turnos</span>
-      </div>
-      <div className="admin-agenda-list">
-        {filteredGroups.length > 0 ? filteredGroups.map(([date, dayBookings]) => (
-          <section key={date} className="admin-agenda-day">
-            <div className="simple-section-head"><h3>{date}</h3><span>{dayBookings.length} turnos</span></div>
+      <div className="admin-agenda">
+        {gruposAgenda.map(([fecha, turnos]) => (
+          <section key={fecha} className="admin-agenda-day">
+            <h3>{fecha}</h3>
             <div className="admin-list">
-              {dayBookings.map((b) => (
-                <div key={b.id} className="admin-row">
-                  <div>
-                    <strong>{b.time} · {b.customerName}</strong>
-                    <span>{b.barberName} · {b.serviceName}</span>
-                    <span className="admin-phone">{b.customerPhone ? `Tel: ${b.customerPhone}` : 'Tel: no cargado'}</span>
+              {turnos.map((b) => {
+                const p = profesionalesPorId.get(String(b.idProfesional));
+                return (
+                  <div key={b.id} className="admin-row admin-booking-row">
+                    <div>
+                      <strong>{p?.name ?? `Profesional #${b.idProfesional}`}</strong>
+                      <span>{b.nombreCliente} · {b.nombreServicio} · {b.hora}</span>
+                      <span className={`booking-status ${clasesEstado[b.estado] ?? 'status-cancelled'}`}>{etiquetasEstado[b.estado] ?? b.estado}</span>
+                    </div>
+                    <div className="admin-row-actions">
+                      <span className="admin-booking-price">${Number(b.precioServicio ?? 0).toLocaleString('es-AR')}</span>
+                    </div>
                   </div>
-                  <span className={`booking-status status-${b.status}`}>{bookingStatusLabels[b.status] ?? b.status}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
-        )) : <p className="admin-note">No hay turnos para mostrar en la agenda.</p>}
+        ))}
+        {gruposAgenda.length === 0 ? <p className="admin-empty">No hay turnos para mostrar.</p> : null}
       </div>
     </article>
   );

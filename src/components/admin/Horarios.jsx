@@ -9,31 +9,31 @@
 //    - Para cada día laboral (mar–sáb) permite hasta 2 bloques
 //      (ej. mañana 09:00–12:00 / tarde 15:00–17:00)
 //    - Checkbox por día lo activa/desactiva (off = descanso, NO guarda filas)
-//    - buildWeeklyForm() transforma las filas de la DB en el estado del form
+//    - armarFormularioSemanal() transforma las filas de la DB en el estado del form
 //    - guardarSemanal() valida cada bloque (entrada<salida, completos),
-//      arma la lista de horarios y llama onSaveHorarios (App → PUT /profesionales/:id/horarios)
+//      arma la lista de horarios y llama onGuardarHorarios (App → PUT /profesionales/:id/horarios)
 //    - Si no hay filas para un día, ese día queda 'off'
 //
 // B) BLOQUEOS PUNTUALES (tabla BloqueoHorario):
 //    - Elegí una fecha (hoy→+30). Si es domingo/lunes avisa que está cerrado.
 //    - toggleDia() bloquea/desbloquea TODO el día (guarda hora=NULL)
 //    - toggleSlot() bloquea/libera un horario puntual (guarda la hora)
-//    - editar() llama onSaveDateBlockouts (App → POST /profesionales/:id/bloqueos)
+//    - editar() llama onGuardarBloqueos (App → POST /profesionales/:id/bloqueos)
 //      que REEMPLAZA los bloqueos de esa fecha.
 //
 // Impacto en el turno: los slots bloqueos + fuera de horario NO aparecen
-// disponibles en Inicio.jsx (getDayFreeSlots filtra).
+// disponibles en Inicio.jsx (horariosLibresDelDia filtra).
 import { useEffect, useState } from 'react';
-import { WORKING_DAYS, getDateBlockedSlots, getWeekdayPattern, getWeeklySlots, toIsoDate } from '../../utilidades/ayudantes';
+import { DIAS_ATENCION, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, fechaAIso } from '../../utilidades/funciones';
 
 // ── Constantes de fechas y días laborales ────────────
 // Rango para el input de fecha de bloqueo puntual: hoy → +30 días
 const today = new Date();
-const minIso = toIsoDate(today);
+const minIso = fechaAIso(today);
 const maxDate = new Date(today); maxDate.setDate(maxDate.getDate() + 30);
-const maxIso = toIsoDate(maxDate);
+const maxIso = fechaAIso(maxDate);
 
-const WEEKDAY_LABELS = [
+const DIAS = [
   { day: 2, label: 'Martes' },
   { day: 3, label: 'Miércoles' },
   { day: 4, label: 'Jueves' },
@@ -42,10 +42,10 @@ const WEEKDAY_LABELS = [
 ];
 
 // ── Helper del formulario semanal ─────────────────────
-const buildWeeklyForm = (barberId, horarioLaboral) => {
-  const rows = (Array.isArray(horarioLaboral) ? horarioLaboral : []).filter((r) => String(r.idProfesional) === String(barberId));
+const armarFormularioSemanal = (idProfesional, horarioLaboral) => {
+  const rows = (Array.isArray(horarioLaboral) ? horarioLaboral : []).filter((r) => String(r.idProfesional) === String(idProfesional));
   const form = {};
-  WORKING_DAYS.forEach((day) => {
+  DIAS_ATENCION.forEach((day) => {
     const dayRows = rows.filter((r) => Number(r.diaSemana) === day && r.horaEntrada != null && r.horaSalida != null);
     const ranges = dayRows.slice(0, 2).map((r) => ({ in: r.horaEntrada, out: r.horaSalida }));
     while (ranges.length < 2) ranges.push({ in: '', out: '' });
@@ -54,60 +54,60 @@ const buildWeeklyForm = (barberId, horarioLaboral) => {
   return form;
 };
 
-function Horarios({ barbers, dateBlockouts, horarioLaboral, onSaveDateBlockouts, onSaveHorarios, selectedScheduleBarber, setSelectedScheduleBarber, selectedScheduleDate, setSelectedScheduleDate, timeSlots }) {
+function Horarios({ profesionales, bloqueosPorFecha, horarioLaboral, onGuardarBloqueos, onGuardarHorarios, profesionalHorario, setProfesionalHorario, fechaHorario, setFechaHorario, horariosFijos }) {
   // ── Estado y sincronización ─────────────────────────
-  const [msg, setMsg] = useState(null);
-  const [weeklyForm, setWeeklyForm] = useState(() => buildWeeklyForm(selectedScheduleBarber, horarioLaboral));
-  const [savingWeekly, setSavingWeekly] = useState(false);
+  const [aviso, setAviso] = useState(null);
+  const [formularioSemanal, setFormularioSemanal] = useState(() => armarFormularioSemanal(profesionalHorario, horarioLaboral));
+  const [guardando, setGuardando] = useState(false);
 
-  useEffect(() => { if (selectedScheduleBarber) setWeeklyForm(buildWeeklyForm(selectedScheduleBarber, horarioLaboral)); }, [selectedScheduleBarber, horarioLaboral]);
+  useEffect(() => { if (profesionalHorario) setFormularioSemanal(armarFormularioSemanal(profesionalHorario, horarioLaboral)); }, [profesionalHorario, horarioLaboral]);
 
-  if (!selectedScheduleBarber || !Array.isArray(barbers) || barbers.length === 0) return <article className="simple-card admin-panel"><h2>Horarios</h2><p className="admin-note">Agregá un profesional para gestionar sus horarios.</p></article>;
+  if (!profesionalHorario || !Array.isArray(profesionales) || profesionales.length === 0) return <article className="simple-card admin-panel"><h2>Horarios</h2><p className="admin-note">Agregá un profesional para gestionar sus horarios.</p></article>;
 
   // ── Datos derivados de la fecha y bloqueos ─────────
-  const weekdayPattern = getWeekdayPattern(new Date(`${selectedScheduleDate}T00:00:00`));
-  const cerrado = !weekdayPattern;
-  const daySlots = weekdayPattern ? getWeeklySlots(horarioLaboral, selectedScheduleBarber, weekdayPattern, timeSlots) : [];
-  const bloqueados = getDateBlockedSlots(dateBlockouts, selectedScheduleBarber, selectedScheduleDate, daySlots);
-  const diaLibre = bloqueados.length > 0 && daySlots.length > 0 && bloqueados.length === daySlots.length;
+  const patronDia = patronDelDia(new Date(`${fechaHorario}T00:00:00`));
+  const cerrado = !patronDia;
+  const horariosDelDia = patronDia ? horariosDeLaSemana(horarioLaboral, profesionalHorario, patronDia, horariosFijos) : [];
+  const bloqueos = bloqueosDeLaFecha(bloqueosPorFecha, profesionalHorario, fechaHorario, horariosDelDia);
+  const diaTomado = bloqueos.length > 0 && horariosDelDia.length > 0 && bloqueos.length === horariosDelDia.length;
 
-  const actualizarRango = (day, idx, field, value) => setWeeklyForm((p) => ({ ...p, [day]: { ...p[day], ranges: p[day].ranges.map((r, i) => (i === idx ? { ...r, [field]: value } : r)) } }));
-  const toggleOff = (day) => setWeeklyForm((p) => ({ ...p, [day]: { ...p[day], off: !p[day].off } }));
+  const actualizarRango = (day, idx, field, value) => setFormularioSemanal((p) => ({ ...p, [day]: { ...p[day], ranges: p[day].ranges.map((r, i) => (i === idx ? { ...r, [field]: value } : r)) } }));
+  const toggleOff = (day) => setFormularioSemanal((p) => ({ ...p, [day]: { ...p[day], off: !p[day].off } }));
 
   const guardarSemanal = async () => {
     const horarios = [];
-    for (const day of WORKING_DAYS) {
-      const d = weeklyForm[day];
+    for (const day of DIAS_ATENCION) {
+      const d = formularioSemanal[day];
       if (!d || d.off) continue;
       for (const r of d.ranges) {
         if (!r.in && !r.out) continue;
         if (!r.in || !r.out) {
-          setMsg({ type: 'error', message: `En ${WEEKDAY_LABELS.find((w) => w.day === day)?.label} cargaste un bloque incompleto: completá entrada y salida o vaciá ambos campos.` });
+          setAviso({ type: 'error', message: `En ${DIAS.find((w) => w.day === day)?.label} cargaste un bloque incompleto: completá entrada y salida o vaciá ambos campos.` });
           return false;
         }
         if (r.out <= r.in) {
-          setMsg({ type: 'error', message: `En ${WEEKDAY_LABELS.find((w) => w.day === day)?.label} la salida debe ser posterior a la entrada.` });
+          setAviso({ type: 'error', message: `En ${DIAS.find((w) => w.day === day)?.label} la salida debe ser posterior a la entrada.` });
           return false;
         }
         horarios.push({ diaSemana: day, horaEntrada: r.in, horaSalida: r.out });
       }
     }
-    setSavingWeekly(true);
-    const ok = await onSaveHorarios(selectedScheduleBarber, horarios);
-    setSavingWeekly(false);
-    setMsg(ok ? { type: 'success', message: 'Horario semanal guardado.' } : { type: 'error', message: 'No se pudieron guardar los horarios semanales. Revisá que estés conectado y con el servidor activo.' });
+    setGuardando(true);
+    const ok = await onGuardarHorarios(profesionalHorario, horarios);
+    setGuardando(false);
+    setAviso(ok ? { type: 'success', message: 'Horario semanal guardado.' } : { type: 'error', message: 'No se pudieron guardar los horarios semanales. Revisá que estés conectado y con el servidor activo.' });
     return ok;
   };
 
   const editar = async (body) => {
-    const ok = await onSaveDateBlockouts(selectedScheduleBarber, selectedScheduleDate, body);
-    setMsg(ok ? { type: 'success', message: 'Bloqueos guardados.' } : { type: 'error', message: 'No se pudieron guardar los cambios. Revisá que estés conectado y con el servidor activo.' });
+    const ok = await onGuardarBloqueos(profesionalHorario, fechaHorario, body);
+    setAviso(ok ? { type: 'success', message: 'Bloqueos guardados.' } : { type: 'error', message: 'No se pudieron guardar los cambios. Revisá que estés conectado y con el servidor activo.' });
     return ok;
   };
-  const toggleDia = async () => { await editar(diaLibre ? { slots: [] } : { diaCompleto: true }); };
+  const toggleDia = async () => { await editar(diaTomado ? { slots: [] } : { diaCompleto: true }); };
   const toggleSlot = async (slot) => {
-    const tiene = bloqueados.includes(slot);
-    await editar({ slots: tiene ? bloqueados.filter((s) => s !== slot) : [...bloqueados, slot] });
+    const tiene = bloqueos.includes(slot);
+    await editar({ slots: tiene ? bloqueos.filter((s) => s !== slot) : [...bloqueos, slot] });
   };
 
   // ── Render del panel ──────────────────────────
@@ -118,18 +118,18 @@ function Horarios({ barbers, dateBlockouts, horarioLaboral, onSaveDateBlockouts,
       <div className="admin-schedule-toolbar">
         <div className="admin-select-group">
           <label>Profesional</label>
-          <select value={selectedScheduleBarber} onChange={(e) => setSelectedScheduleBarber(e.target.value)}>
-            {barbers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          <select value={profesionalHorario} onChange={(e) => setProfesionalHorario(e.target.value)}>
+            {profesionales.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
       </div>
-      {msg ? <div className={`simple-feedback ${msg.type} admin-feedback`}>{msg.message}</div> : null}
+      {aviso ? <div className={`simple-feedback ${aviso.type} admin-feedback`}>{aviso.message}</div> : null}
 
       <h3 className="admin-subtitle">Horario semanal</h3>
       <p className="admin-note">Cada día puede tener hasta dos bloques (mañana y tarde) de 30 minutos en adelante. Desactivá el día si el profesional no trabaja.</p>
       <div className="weekly-horarios">
-        {WEEKDAY_LABELS.map(({ day, label }) => {
-          const d = weeklyForm[day];
+        {DIAS.map(({ day, label }) => {
+          const d = formularioSemanal[day];
           return (
             <div key={day} className={`weekly-day ${d?.off ? 'weekly-day-off' : ''}`}>
               <div className="weekly-day-head">
@@ -153,8 +153,8 @@ function Horarios({ barbers, dateBlockouts, horarioLaboral, onSaveDateBlockouts,
         })}
       </div>
       <div className="admin-form-actions">
-        <button type="button" className="simple-submit" disabled={savingWeekly} onClick={guardarSemanal}>{savingWeekly ? 'Guardando...' : 'Guardar horario semanal'}</button>
-        {!savingWeekly && <button type="button" className="simple-submit secondary" onClick={() => { setWeeklyForm(buildWeeklyForm(selectedScheduleBarber, horarioLaboral)); setMsg(null); }}>Descartar cambios</button>}
+        <button type="button" className="simple-submit" disabled={guardando} onClick={guardarSemanal}>{guardando ? 'Guardando...' : 'Guardar horario semanal'}</button>
+        {!guardando && <button type="button" className="simple-submit secondary" onClick={() => { setFormularioSemanal(armarFormularioSemanal(profesionalHorario, horarioLaboral)); setAviso(null); }}>Descartar cambios</button>}
       </div>
 
       <h3 className="admin-subtitle">Bloqueos puntuales</h3>
@@ -162,14 +162,14 @@ function Horarios({ barbers, dateBlockouts, horarioLaboral, onSaveDateBlockouts,
       <div className="admin-schedule-toolbar">
         <div className="admin-select-group">
           <label>Día</label>
-          <input type="date" min={minIso} max={maxIso} value={selectedScheduleDate} onChange={(e) => e.target.value && setSelectedScheduleDate(e.target.value)} />
+          <input type="date" min={minIso} max={maxIso} value={fechaHorario} onChange={(e) => e.target.value && setFechaHorario(e.target.value)} />
         </div>
       </div>
       {cerrado ? (
         <p className="admin-note">Este día es domingo o lunes, la barbería está cerrada. Elegí un día de martes a sábado.</p>
       ) : (
         <>
-          {diaLibre ? (
+          {diaTomado ? (
             <div className="admin-day-off">
               <p>Día tomado: todos los horarios están bloqueados.</p>
               <button type="button" className="simple-submit" onClick={toggleDia}>Desbloquear todo el día</button>
@@ -179,8 +179,8 @@ function Horarios({ barbers, dateBlockouts, horarioLaboral, onSaveDateBlockouts,
           )}
           <p className="admin-note">Tocá un horario para bloquearlo o liberarlo puntualmente.</p>
           <div className="chip-grid admin-hours-grid">
-            {daySlots.map((slot) => {
-              const blocked = bloqueados.includes(slot);
+            {horariosDelDia.map((slot) => {
+              const blocked = bloqueos.includes(slot);
               return <button key={slot} type="button" className={`simple-chip ${blocked ? 'occupied' : 'selected'}`} onClick={() => toggleSlot(slot)}>{slot}<small>{blocked ? 'Bloqueado' : 'Libre'}</small></button>;
             })}
           </div>

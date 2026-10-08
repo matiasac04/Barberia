@@ -4,22 +4,22 @@
 // ¿CÓMO FUNCIONA?
 //
 // Es el "shell" del admin. No hace llamadas a la API directamente: recibe
-// de App.jsx los datos (bookings, barbers, services, horarios, bloqueos)
-// y los HANDLERS CRUD ya listos (onAddBarber, onUpdateBooking, etc.).
+// de App.jsx los datos (turnos, profesionales, servicios, horarios, bloqueos)
+// y los HANDLERS CRUD ya listos (onRegistrarProfesional, onEditarTurno, etc.).
 //
 // Su trabajo es:
-// 1. Manejar la navegación entre 6 PESTAÑAS (activeTab):
+// 1. Manejar la navegación entre 6 PESTAÑAS (pestanaActiva):
 //    Resumen · Profesionales · Servicios · Horarios · Turnos · Agenda
 // 2. Manejar el ESTADO DE LOS FORMULARIOS (alta/edición de profesional,
 //    servicio y turno) —incluido qué registro se está editando (form.id)
-// 3. DERIVAR datos: agenda agrupada por fecha (agendaGroups) y conteo
-//    de turnos por estado (statusCount) para las tarjetas del resumen.
+// 3. DERIVAR datos: agenda agrupada por fecha (gruposAgenda) y conteo
+//    de turnos por estado (conteoEstados) para las tarjetas del resumen.
 // 4. Delegar el render a cada panel, pasándole datos y handlers.
 //
 // Si el usuario cambia de profesional/turno, se reselecciona el primero
 // válido (useEffects) para no dejar forms apuntando a algo inexistente.
 import { useEffect, useMemo, useState } from 'react';
-import { toIsoDate } from '../../utilidades/ayudantes';
+import { fechaAIso } from '../../utilidades/funciones';
 import Agenda from './Agenda';
 import Turnos from './Turnos';
 import PieDePagina from '../comunes/PieDePagina';
@@ -30,116 +30,115 @@ import Horarios from './Horarios';
 import Servicios from './Servicios';
 
 // ── Constantes de formularios y opciones ──────────────
-// Etiquetas de estados (para mostrar en listas)
-// Opciones de estado (para el <select> del formulario de turno)
+// Etiquetas de estados (para mostrar en listas) y su clase CSS
+// opcionesEstado alimenta el <select> del formulario de turno.
 //
-// OJO: NO existe un estado 'confirmed'. resolveBookingStatus (ayudantes.js)
-// solo puede devolver 'cancelled' | 'completed' | 'no-show' | 'expired' |
-// 'pending'. Un turno confirmado y futuro es 'pending'; si ya pasó la hora,
-// 'expired'. Antes había una opción 'confirmed' acá que NUNCA se producía, así
-// que la tarjeta "Confirmado" del Resumen mostraba siempre 0 y
-// "Turnos activos" era en realidad solo "pendientes". Por eso el estado que
-// llega de la DB como 'Confirmado' se etiqueta 'Confirmado' (que es lo que dice
-// la base) y el mapa de estados del backend manda 'pending' y 'confirmed' al
-// mismo valor de la DB.
-const bookingStatusLabels = { pending: 'Confirmado', completed: 'Completado', 'no-show': 'No se presentó', cancelled: 'Cancelado', expired: 'Expirado' };
-const bookingStatusOptions = [
-  { value: 'pending', label: 'Confirmado' },
-  { value: 'completed', label: 'Completado' }, { value: 'no-show', label: 'No se presentó' }, { value: 'cancelled', label: 'Cancelado' },
+// OJO: NO existe un estado 'confirmed' ni valores en inglés. El backend ya
+// guarda el estado en español (Confirmado/Completado/NoSePresento/Cancelado)
+// y estadoDelTurno (funciones.js) agrega 'Expirado' cuando la hora pasó.
+// Antes había estados tipo 'pending'/'no-show' que se traducían a mano y la
+// tarjeta "Confirmado" del Resumen mostraba siempre 0.
+const etiquetasEstado = { Confirmado: 'Confirmado', Completado: 'Completado', NoSePresento: 'No se presentó', Cancelado: 'Cancelado', Expirado: 'Expirado' };
+const clasesEstado = { Confirmado: 'status-confirmed', Completado: 'status-completed', NoSePresento: 'status-no-show', Cancelado: 'status-cancelled', Expirado: 'status-cancelled' };
+const opcionesEstado = [
+  { value: 'Confirmado', label: 'Confirmado' },
+  { value: 'Completado', label: 'Completado' },
+  { value: 'NoSePresento', label: 'No se presentó' },
+  { value: 'Cancelado', label: 'Cancelado' },
 ];
-const tabOptions = [
-  { id: 'overview', label: 'Resumen' }, { id: 'professionals', label: 'Profesionales' }, { id: 'services', label: 'Servicios' },
-  { id: 'schedule', label: 'Horarios' }, { id: 'bookings', label: 'Turnos' }, { id: 'agenda', label: 'Agenda' },
+const opcionesPestana = [
+  { id: 'resumen', label: 'Resumen' }, { id: 'profesionales', label: 'Profesionales' }, { id: 'servicios', label: 'Servicios' },
+  { id: 'horarios', label: 'Horarios' }, { id: 'turnos', label: 'Turnos' }, { id: 'agenda', label: 'Agenda' },
 ];
-const emptyBarberForm = { id: '', name: '', email: '', telefono: '' };
-const emptyServiceForm = { id: '', name: '', price: '', duracion: '' };
-const createBookingForm = (b) => ({
-  customerName: b?.customerName ?? '', customerPhone: b?.customerPhone ?? '', barberId: b?.barberId ?? '',
-  serviceId: b?.serviceId ?? '', bookingDate: b?.bookingDate ?? '', time: b?.time ?? '', status: b?.status ?? 'pending',
+const profesionalVacio = { id: '', name: '', email: '', telefono: '' };
+const servicioVacio = { id: '', name: '', price: '', duracion: '' };
+const crearFormularioTurno = (b) => ({
+  nombreCliente: b?.nombreCliente ?? '', telefonoCliente: b?.telefonoCliente ?? '', idProfesional: b?.idProfesional ?? '',
+  idServicio: b?.idServicio ?? '', fecha: b?.fecha ?? '', hora: b?.hora ?? '', estado: b?.estado ?? 'Confirmado',
 });
 
-function Admin({ allBarbers, barbers, bookings, currentUser, dateBlockouts, errorCarga, horarioLaboral, onAddBarber, onAddService, onDeleteBarber, onDeleteBooking, onDeleteService, onLogout, onSaveDateBlockouts, onSaveHorarios, onToggleBarberActivo, onUpdateBarber, onUpdateBooking, onUpdateService, services, timeSlots }) {
+function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueosPorFecha, errorCarga, horarioLaboral, onRegistrarProfesional, onRegistrarServicio, onBorrarProfesional, onBorrarTurno, onBorrarServicio, onCerrarSesion, onGuardarBloqueos, onGuardarHorarios, onCambiarActivoProfesional, onEditarProfesional, onEditarTurno, onEditarServicio, servicios, horariosFijos }) {
   // ── Estado de formularios y selección ─────────────
-  const [activeTab, setActiveTab] = useState('overview');
-  const [barberForm, setBarberForm] = useState(emptyBarberForm);
-  const [serviceForm, setServiceForm] = useState(emptyServiceForm);
-  const [selectedScheduleBarber, setSelectedScheduleBarber] = useState(barbers[0]?.id ?? '');
-  const [selectedScheduleDate, setSelectedScheduleDate] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return toIsoDate(d); });
-  const [selectedBookingId, setSelectedBookingId] = useState(bookings[0]?.id ?? '');
-  const [bookingForm, setBookingForm] = useState(createBookingForm(bookings[0]));
-  const [notice, setNotice] = useState({ type: 'idle', message: 'Administrá profesionales, servicios, horarios y turnos desde aquí.' });
-  useEffect(() => { if (barbers.length === 0) { setSelectedScheduleBarber(''); return; } if (!barbers.some((b) => String(b.id) === String(selectedScheduleBarber))) setSelectedScheduleBarber(barbers[0].id); }, [barbers, selectedScheduleBarber]);
-  useEffect(() => { if (bookings.length === 0) { setSelectedBookingId(''); setBookingForm(createBookingForm()); return; } const sel = bookings.find((b) => b.id === selectedBookingId) ?? bookings[0]; setSelectedBookingId(sel.id); setBookingForm(createBookingForm(sel)); }, [bookings, selectedBookingId]);
+  const [pestanaActiva, setPestanaActiva] = useState('resumen');
+  const [formularioProfesional, setFormularioProfesional] = useState(profesionalVacio);
+  const [formularioServicio, setFormularioServicio] = useState(servicioVacio);
+  const [profesionalHorario, setProfesionalHorario] = useState(profesionales[0]?.id ?? '');
+  const [fechaHorario, setFechaHorario] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return fechaAIso(d); });
+  const [turnoSeleccionadoId, setTurnoSeleccionadoId] = useState(turnos[0]?.id ?? '');
+  const [formularioTurno, setFormularioTurno] = useState(crearFormularioTurno(turnos[0]));
+  const [aviso, setAviso] = useState({ type: 'idle', message: 'Administrá profesionales, servicios, horarios y turnos desde aquí.' });
+  useEffect(() => { if (profesionales.length === 0) { setProfesionalHorario(''); return; } if (!profesionales.some((b) => String(b.id) === String(profesionalHorario))) setProfesionalHorario(profesionales[0].id); }, [profesionales, profesionalHorario]);
+  useEffect(() => { if (turnos.length === 0) { setTurnoSeleccionadoId(''); setFormularioTurno(crearFormularioTurno()); return; } const sel = turnos.find((b) => b.id === turnoSeleccionadoId) ?? turnos[0]; setTurnoSeleccionadoId(sel.id); setFormularioTurno(crearFormularioTurno(sel)); }, [turnos, turnoSeleccionadoId]);
   // ── Datos derivados (agenda y estados) ────────────
-  const agendaGroups = useMemo(() => {
+  const gruposAgenda = useMemo(() => {
     const g = new Map();
-    bookings.filter((b) => b.status !== 'cancelled').slice().sort((l, r) => `${l.bookingDate}T${l.time}`.localeCompare(`${r.bookingDate}T${r.time}`)).forEach((b) => { const e = g.get(b.bookingDate) ?? []; e.push(b); g.set(b.bookingDate, e); });
+    turnos.filter((b) => b.estado !== 'Cancelado').slice().sort((l, r) => `${l.fecha}T${l.hora}`.localeCompare(`${r.fecha}T${r.hora}`)).forEach((b) => { const e = g.get(b.fecha) ?? []; e.push(b); g.set(b.fecha, e); });
     return [...g.entries()];
-  }, [bookings]);
-  const statusCount = useMemo(() => bookings.reduce((a, b) => { a[b.status] = (a[b.status] ?? 0) + 1; return a; }, { pending: 0, completed: 0, 'no-show': 0, cancelled: 0, expired: 0 }), [bookings]);
+  }, [turnos]);
+  const conteoEstados = useMemo(() => turnos.reduce((a, b) => { a[b.estado] = (a[b.estado] ?? 0) + 1; return a; }, { Confirmado: 0, Completado: 0, NoSePresento: 0, Cancelado: 0, Expirado: 0 }), [turnos]);
   // ── Handlers de formularios ───────────────────────
-  const handleBarberSubmit = async (e) => {
+  const guardarProfesional = async (e) => {
     e.preventDefault();
-    if (!barberForm.name.trim()) { setNotice({ type: 'error', message: 'Escribí un nombre para guardar el profesional.' }); return; }
+    if (!formularioProfesional.name.trim()) { setAviso({ type: 'error', message: 'Escribí un nombre para guardar el profesional.' }); return; }
     let res;
-    if (barberForm.id) { res = await onUpdateBarber(barberForm.id, barberForm.name.trim(), barberForm.email, barberForm.telefono); setNotice(res.ok ? { type: 'success', message: 'Profesional actualizado.' } : { type: 'error', message: res.error || 'No se pudo actualizar el profesional.' }); }
-    else { res = await onAddBarber(barberForm.name.trim(), barberForm.email, barberForm.telefono); setNotice(res.ok ? { type: 'success', message: 'Profesional agregado.' } : { type: 'error', message: res.error || 'No se pudo agregar el profesional.' }); }
-    if (res.ok) setBarberForm(emptyBarberForm);
+    if (formularioProfesional.id) { res = await onEditarProfesional(formularioProfesional.id, formularioProfesional.name.trim(), formularioProfesional.email, formularioProfesional.telefono); setAviso(res.ok ? { type: 'success', message: 'Profesional actualizado.' } : { type: 'error', message: res.error || 'No se pudo actualizar el profesional.' }); }
+    else { res = await onRegistrarProfesional(formularioProfesional.name.trim(), formularioProfesional.email, formularioProfesional.telefono); setAviso(res.ok ? { type: 'success', message: 'Profesional agregado.' } : { type: 'error', message: res.error || 'No se pudo agregar el profesional.' }); }
+    if (res.ok) setFormularioProfesional(profesionalVacio);
   };
-  const handleDeleteBarberClick = async (id) => { const res = await onDeleteBarber(id); if (res.ok) setBarberForm(emptyBarberForm); else if (res.error) setNotice({ type: 'error', message: res.error }); };
-  const handleServiceSubmit = async (e) => {
+  const confirmarBorradoProfesional = async (id) => { const res = await onBorrarProfesional(id); if (res.ok) setFormularioProfesional(profesionalVacio); else if (res.error) setAviso({ type: 'error', message: res.error }); };
+  const guardarServicio = async (e) => {
     e.preventDefault();
-    const pv = Number(serviceForm.price);
-    const dv = Number(serviceForm.duracion);
-    if (!serviceForm.name.trim() || Number.isNaN(pv) || pv <= 0) { setNotice({ type: 'error', message: 'Completá nombre y precio válido para guardar el servicio.' }); return; }
-    if (Number.isNaN(dv) || dv <= 0) { setNotice({ type: 'error', message: 'Completá una duración válida (en minutos) para guardar el servicio.' }); return; }
+    const pv = Number(formularioServicio.price);
+    const dv = Number(formularioServicio.duracion);
+    if (!formularioServicio.name.trim() || Number.isNaN(pv) || pv <= 0) { setAviso({ type: 'error', message: 'Completá nombre y precio válido para guardar el servicio.' }); return; }
+    if (Number.isNaN(dv) || dv <= 0) { setAviso({ type: 'error', message: 'Completá una duración válida (en minutos) para guardar el servicio.' }); return; }
     let ok;
-    if (serviceForm.id) { ok = await onUpdateService(serviceForm.id, serviceForm.name.trim(), pv, dv); if (ok) setNotice({ type: 'success', message: 'Servicio actualizado.' }); }
-    else { ok = await onAddService(serviceForm.name.trim(), pv, dv); if (ok) setNotice({ type: 'success', message: 'Servicio agregado.' }); }
-    if (ok) setServiceForm(emptyServiceForm);
+    if (formularioServicio.id) { ok = await onEditarServicio(formularioServicio.id, formularioServicio.name.trim(), pv, dv); if (ok) setAviso({ type: 'success', message: 'Servicio actualizado.' }); }
+    else { ok = await onRegistrarServicio(formularioServicio.name.trim(), pv, dv); if (ok) setAviso({ type: 'success', message: 'Servicio agregado.' }); }
+    if (ok) setFormularioServicio(servicioVacio);
   };
-  const handleDeleteServiceClick = async (s) => { if (await onDeleteService(s.id)) setServiceForm(emptyServiceForm); };
-  const handleBookingSubmit = async (e) => {
+  const confirmarBorradoServicio = async (s) => { if (await onBorrarServicio(s.id)) setFormularioServicio(servicioVacio); };
+  const guardarTurno = async (e) => {
     e.preventDefault();
-    if (!selectedBookingId) { setNotice({ type: 'error', message: 'No hay un turno seleccionado para editar.' }); return; }
-    if (!bookingForm.customerName.trim() || !bookingForm.customerPhone.trim()) { setNotice({ type: 'error', message: 'Completá nombre y celular del turno.' }); return; }
-    const ok = await onUpdateBooking(selectedBookingId, bookingForm);
-    setNotice(ok ? { type: 'success', message: 'Turno actualizado en la base de datos.' } : { type: 'error', message: 'No se pudo actualizar el turno. Revisá la conexión y que la sesión siga activa.' });
+    if (!turnoSeleccionadoId) { setAviso({ type: 'error', message: 'No hay un turno seleccionado para editar.' }); return; }
+    if (!formularioTurno.nombreCliente.trim() || !formularioTurno.telefonoCliente.trim()) { setAviso({ type: 'error', message: 'Completá nombre y celular del turno.' }); return; }
+    const ok = await onEditarTurno(turnoSeleccionadoId, formularioTurno);
+    setAviso(ok ? { type: 'success', message: 'Turno actualizado en la base de datos.' } : { type: 'error', message: 'No se pudo actualizar el turno. Revisá la conexión y que la sesión siga activa.' });
   };
   // ── Render del panel ──────────────────────────────
-  const selectedBooking = bookings.find((b) => b.id === selectedBookingId) ?? bookings[0] ?? null;
-  const startEditBarber = (b) => setBarberForm({ id: b.id, name: b.name, email: b.email ?? '', telefono: b.telefono ?? '' });
-  const startEditService = (s) => setServiceForm({ id: s.id, name: s.name, price: String(s.price), duracion: s.durationMinutes != null ? String(s.durationMinutes) : '' });
-  const startEditBooking = (b) => { setSelectedBookingId(b.id); setBookingForm(createBookingForm(b)); };
+  const turnoSeleccionado = turnos.find((b) => b.id === turnoSeleccionadoId) ?? turnos[0] ?? null;
+  const cargarProfesionalEnForm = (b) => setFormularioProfesional({ id: b.id, name: b.name, email: b.email ?? '', telefono: b.telefono ?? '' });
+  const cargarServicioEnForm = (s) => setFormularioServicio({ id: s.id, name: s.name, price: String(s.price), duracion: s.durationMinutes != null ? String(s.durationMinutes) : '' });
+  const cargarTurnoEnForm = (b) => { setTurnoSeleccionadoId(b.id); setFormularioTurno(crearFormularioTurno(b)); };
   return (
     <main className="simple-page admin-page">
       <Cabecera subtitle="Panel administrativo" />
       <section className="simple-card client-topbar admin-topbar">
         <div><h2>Panel de administración</h2><p>Controlá la operación de la barbería.{currentUser ? ` Sesión activa: ${currentUser.email}.` : ''}</p></div>
-        <button type="button" className="client-logout" onClick={onLogout}>Cerrar sesión</button>
+        <button type="button" className="client-logout" onClick={onCerrarSesion}>Cerrar sesión</button>
       </section>
       <section className="simple-card admin-summary">
-        <div><strong>{barbers.length}</strong><span>Profesionales</span></div>
-        <div><strong>{services.length}</strong><span>Servicios</span></div>
-        <div><strong>{statusCount.pending}</strong><span>Turnos activos</span></div>
-        <div><strong>{statusCount.completed + statusCount['no-show']}</strong><span>Histórico</span></div>
+        <div><strong>{profesionales.length}</strong><span>Profesionales</span></div>
+        <div><strong>{servicios.length}</strong><span>Servicios</span></div>
+        <div><strong>{conteoEstados.Confirmado}</strong><span>Turnos activos</span></div>
+        <div><strong>{conteoEstados.Completado + conteoEstados.NoSePresento}</strong><span>Histórico</span></div>
       </section>
       {/* El panel se dibuja siempre (si no, el admin no podría ni crear el
           primer servicio), así que el aviso de carga fallida va arriba: sin
           esto, un backend caído se veía como un panel vacío pero "funcionando". */}
       {errorCarga && <div className="simple-feedback error admin-feedback">{errorCarga} Los paneles de abajo se muestran igual, pero esos datos están vacíos o desactualizados.</div>}
       <section className="simple-card admin-tabs">
-        {tabOptions.map((t) => <button key={t.id} type="button" aria-pressed={activeTab === t.id} className={`admin-tab ${activeTab === t.id ? 'selected' : ''}`} onClick={() => setActiveTab(t.id)}>{t.label}</button>)}
+        {opcionesPestana.map((t) => <button key={t.id} type="button" aria-pressed={pestanaActiva === t.id} className={`admin-tab ${pestanaActiva === t.id ? 'selected' : ''}`} onClick={() => setPestanaActiva(t.id)}>{t.label}</button>)}
       </section>
       <section className="admin-content">
-        {activeTab === 'overview' && <Resumen bookingStatusOptions={bookingStatusOptions} statusCount={statusCount} />}
-        {activeTab === 'professionals' && <Profesionales allBarbers={allBarbers} barberForm={barberForm} barbers={barbers} emptyBarberForm={emptyBarberForm} onBarberFormChange={setBarberForm} onBarberSubmit={handleBarberSubmit} onCancelBarberEdit={() => setBarberForm(emptyBarberForm)} onDeleteBarber={handleDeleteBarberClick} onStartEditBarber={startEditBarber} onToggleBarberActivo={onToggleBarberActivo} />}
-        {activeTab === 'services' && <Servicios emptyServiceForm={emptyServiceForm} onCancelServiceEdit={() => setServiceForm(emptyServiceForm)} onDeleteService={handleDeleteServiceClick} onServiceFormChange={setServiceForm} onServiceSubmit={handleServiceSubmit} onStartEditService={startEditService} serviceForm={serviceForm} services={services} />}
-        {activeTab === 'schedule' && <Horarios barbers={barbers} dateBlockouts={dateBlockouts} horarioLaboral={horarioLaboral} onSaveDateBlockouts={onSaveDateBlockouts} onSaveHorarios={onSaveHorarios} selectedScheduleBarber={selectedScheduleBarber} selectedScheduleDate={selectedScheduleDate} setSelectedScheduleBarber={setSelectedScheduleBarber} setSelectedScheduleDate={setSelectedScheduleDate} timeSlots={timeSlots} />}
-        {activeTab === 'bookings' && <Turnos barbers={barbers} bookingForm={bookingForm} bookingStatusLabels={bookingStatusLabels} bookingStatusOptions={bookingStatusOptions} bookings={bookings} onBookingFormChange={setBookingForm} onBookingSubmit={handleBookingSubmit} onDeleteBooking={onDeleteBooking} onStartEditBooking={startEditBooking} services={services} selectedBooking={selectedBooking} />}
-        {activeTab === 'agenda' && <Agenda agendaGroups={agendaGroups} barbers={barbers} bookingStatusLabels={bookingStatusLabels} />}
+        {pestanaActiva === 'resumen' && <Resumen opcionesEstado={opcionesEstado} conteoEstados={conteoEstados} />}
+        {pestanaActiva === 'profesionales' && <Profesionales todosProfesionales={todosProfesionales} formularioProfesional={formularioProfesional} profesionales={profesionales} profesionalVacio={profesionalVacio} onCambioFormularioProfesional={setFormularioProfesional} onGuardarProfesional={guardarProfesional} onCancelarEdicionProfesional={() => setFormularioProfesional(profesionalVacio)} onBorrarProfesional={confirmarBorradoProfesional} onEmpezarEdicionProfesional={cargarProfesionalEnForm} onCambiarActivoProfesional={onCambiarActivoProfesional} />}
+        {pestanaActiva === 'servicios' && <Servicios servicioVacio={servicioVacio} onCancelarEdicionServicio={() => setFormularioServicio(servicioVacio)} onBorrarServicio={confirmarBorradoServicio} onCambioFormularioServicio={setFormularioServicio} onGuardarServicio={guardarServicio} onEmpezarEdicionServicio={cargarServicioEnForm} formularioServicio={formularioServicio} servicios={servicios} />}
+        {pestanaActiva === 'horarios' && <Horarios profesionales={profesionales} bloqueosPorFecha={bloqueosPorFecha} horarioLaboral={horarioLaboral} onGuardarBloqueos={onGuardarBloqueos} onGuardarHorarios={onGuardarHorarios} profesionalHorario={profesionalHorario} fechaHorario={fechaHorario} setProfesionalHorario={setProfesionalHorario} setFechaHorario={setFechaHorario} horariosFijos={horariosFijos} />}
+        {pestanaActiva === 'turnos' && <Turnos profesionales={profesionales} formularioTurno={formularioTurno} etiquetasEstado={etiquetasEstado} clasesEstado={clasesEstado} opcionesEstado={opcionesEstado} turnos={turnos} onCambioFormularioTurno={setFormularioTurno} onGuardarTurno={guardarTurno} onBorrarTurno={onBorrarTurno} onEmpezarEdicionTurno={cargarTurnoEnForm} servicios={servicios} turnoSeleccionado={turnoSeleccionado} />}
+        {pestanaActiva === 'agenda' && <Agenda gruposAgenda={gruposAgenda} profesionales={profesionales} etiquetasEstado={etiquetasEstado} clasesEstado={clasesEstado} />}
       </section>
-      <div className={`simple-feedback ${notice.type} admin-feedback`}>{notice.message}</div>
+      <div className={`simple-feedback ${aviso.type} admin-feedback`}>{aviso.message}</div>
       <PieDePagina />
     </main>
   );
