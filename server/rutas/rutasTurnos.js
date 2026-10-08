@@ -59,8 +59,8 @@ const { enviarMail, htmlConfirmacionTurno, formatearFecha } = require("../mailer
 // regla se valida acá, en el servidor, que es el que decide de verdad.
 const MS_24H = 24 * 60 * 60 * 1000;
 
-// Arma el Date real del turno a partir de una fecha 'YYYY-MM-DD' y una hora
-// 'HH:MM' / 'HH:MM:SS'.
+// Arma el instante REAL del turno a partir de una fecha 'YYYY-MM-DD' y una
+// hora 'HH:MM' / 'HH:MM:SS'. Fecha y hora llegan en hora argentina.
 //
 // OJO con el formato de la fecha: tiene que ser SIEMPRE el string que devuelve
 // CONVERT(varchar(10), fecha, 23), nunca el Date crudo de la columna DATE.
@@ -69,11 +69,20 @@ const MS_24H = 24 * 60 * 60 * 1000;
 // 24 h quedaría corrida un día entero. Por eso las consultas de abajo piden
 // fecha y hora ya como texto, que es la convención que usa todo el resto del
 // proyecto (ver CONVERT en /turnos y /turnos/ocupados).
+//
+// TIMEZONE: el servidor (Vercel) corre en UTC, así que NO se puede usar el
+// reloj local para comparar contra Date.now(): un turno de las 15:00 AR se
+// construiría como 15:00 UTC (12:00 AR) y "Ese horario ya pasó" se disparaba
+// para todos los turnos del día. Se parsea la fecha con 'Z' (independiente de
+// la zona), se arma con Date.UTC y se corre el offset de Argentina (UTC-3, sin
+// DST) para obtener el instante real.
+const UTC_OFFSET_ARS = -3 * 60 * 60 * 1000;
 const inicioDeTurno = (fechaIso, horaInicio) => {
-  const f = new Date(`${String(fechaIso ?? '').trim()}T00:00:00`);
+  const f = new Date(`${String(fechaIso ?? '').trim()}T00:00:00Z`);
   if (Number.isNaN(f.getTime())) return null;
   const [h, m] = String(horaInicio ?? "00:00").slice(0, 5).split(":").map(Number);
-  const inicio = new Date(f.getFullYear(), f.getMonth(), f.getDate(), h || 0, m || 0, 0, 0);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  const inicio = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth(), f.getUTCDate(), h, m, 0, 0) - UTC_OFFSET_ARS);
   return Number.isNaN(inicio.getTime()) ? null : inicio;
 };
 
@@ -86,9 +95,9 @@ const tieneMenosDe24h = (fechaIso, horaInicio) => {
 };
 
 // ¿Ese horario ya arrancó? (p. ej. hoy a las 10:00 cuando ya son las 14:35).
-// Mismo criterio que la regla de las 24 h: usa inicioDeTurno, que arma el Date
-// en el reloj del servidor. Si la fecha viene corrupta devuelve false, para que
-// las otras validaciones hablen.
+// Usa inicioDeTurno, que ya convierte a instante real (ver TIMEZONE arriba).
+// Si la fecha viene corrupta devuelve false, para que las otras validaciones
+// hablen.
 const horarioYaPaso = (fechaIso, horaInicio) => {
   const inicio = inicioDeTurno(fechaIso, horaInicio);
   if (!inicio) return false;
