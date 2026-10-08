@@ -133,7 +133,7 @@ async function getPool() {
         });
     }
 
-    // 3) Devolvemos la conexión: la que ya estaba, o la que se está abriendo..
+    // 3) Devolvemos la conexión: la que ya estaba, o la que se está abriendo.
     return reconociendo;
 }
 
