@@ -9,7 +9,7 @@
 //      disponibilidad, bloqueos y horarios). Así todos los componentes
 //      ven la misma información y se mantienen sincronizados.
 //   2. ORQUESTAR LAS PETICIONES: concentra todas las llamadas al backend
-//      (a través de src/servicios/consultas.js). Decide CUÁNDO pedir datos,
+//      (a través de src/servicios/api.js). Decide CUÁNDO pedir datos,
 //      QUÉ pedir y QUÉ hacer cuando llegan o fallan.
 //   3. CONTROLAR EL FLUJO DE PANTALLAS: según el usuario logueado
 //      (role: 'admin' o 'cliente') decide qué vista renderizar:
@@ -23,7 +23,7 @@
 //
 // FLUJO DE DATOS (cómo viaja la información):
 //   UI (componentes) → App.jsx (handlers/estado)
-//                    → src/servicios/consultas.js (peticion/fetch)
+//                    → src/servicios/api.js (peticion/fetch)
 //                    → Backend Express (server/index.js + rutas)
 //                    → SQL Server (BD)
 //                    ← respuesta JSON ← vuelve por el mismo camino ← actualiza estado ← re-renderiza UI
@@ -50,8 +50,8 @@ import MisTurnos from './components/cliente/MisTurnos';       // Historial "Mis 
 import WhatsApp from './components/comunes/WhatsApp';        // Botón flotante de WhatsApp
 // Datos semilla (fallback de arranque, la DB es la fuente real):
 import { horariosFijos } from './datos/semilla';
-// Funciones de la API (todas las llamadas al backend, ver src/servicios/consultas.js):
-import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, verificarToken } from './servicios/consultas';
+// Funciones de la API (todas las llamadas al backend, ver src/servicios/api.js):
+import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, verificarToken } from './servicios/api';
 // Utilidades de fechas/slots/estados (ver src/utilidades/funciones.js):
 import { sePuedeCancelar, formatoFecha, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, esDiaCerrado, estadoDelTurno, datosDelDia, fechaAIso } from './utilidades/funciones';
 
@@ -761,3 +761,4 @@ return () => { cancelado = true; };
   );
 }
 export default App;
+
