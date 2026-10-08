@@ -55,9 +55,13 @@ Spa de barbería (reservas de turnos) en React 19 + Vite 8, sin TypeScript, con 
 - Trabajar y hacer git siempre desde la raíz del repo clonado. Si git no está en el PATH de la terminal, usar la ruta completa del instalador.
 - Cualquier integrante del equipo: clonar con `git clone https://github.com/matiasac04/Barberia.git`. NO hacer `pull`/`push` de historiales viejos ni `push --force` (pisaría la estructura correcta). Si aparece "unrelated histories", resolver con `git fetch origin` + `git reset --hard origin/main`, o re-clonar.
 
-## Deploy (en proceso)
-- Objetivo: todo en **Vercel** (plan Hobby, gratis), con **2 proyectos** del mismo repo de GitHub (`matiasac04/Barberia`) conectados vía Git: cada push a `main` despliega ambos. (Se descartó Belmo/Koyeb/Render/Northflank.)
+## Deploy
+- Todo en **Vercel** (plan Hobby, gratis), con **2 proyectos** del mismo repo de GitHub (`matiasac04/Barberia`) conectados vía Git: cada push a `main` despliega ambos. (Se descartó Belmo/Koyeb/Render/Northflank.)
 - **Proyecto frontend**: root directory vacío (raíz del repo). Vite se detecta solo (build `vite build`, output `dist/`). Env `VITE_API_URL` = URL del proyecto backend (sin barra final), en Production y Preview (se inyecta en el build).
 - **Proyecto backend**: root directory `server`. Express se detecta zero-config (entry `index.js` con `app.listen` + `module.exports = app`). Sin build command. Env en el dashboard, NO en el repo: `usuario_bd`, `psw_bd`, `servidor_bd`, `nombre_bd`, `JWT_SECRET`. Región de funciones cercana al SQL de Somee.
 - La DB es externa (SQL Server en Somee, credenciales en `server/.env`, fuera del repo), así que el deploy no afecta datos.
 - Verificación: `GET https://<api>.vercel.app/servicios` devuelve JSON; después probar end-to-end login, turnos y panel admin.
+- **Regla de deploys (plan Hobby)**: el repo es **público** — es lo que permite que cualquier integrante despliegue gratis (en Hobby con repo privado solo despliega el dueño del equipo Vercel; los commits de otros autores quedan **"Blocked"** con el error *"commit author does not have contributing access"*, que NO es error de código). Si vuelve a pasar: `git log -1 --format='%an <%ae>'` y comparar contra la cuenta Vercel del dueño.
+
+## Próximos pasos
+- Login con Google: mock en `src/App.jsx`, rama `respaldo-google`, falta conseguir `GOOGLE_CLIENT_ID` (consola de Google Cloud).
