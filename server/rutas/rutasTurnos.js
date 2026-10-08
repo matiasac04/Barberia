@@ -50,6 +50,7 @@ const router = require("express").Router();
 const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 const { errorFecha, errorId } = require("../validaciones");
+const { enviarMail, htmlConfirmacionTurno, formatearFecha } = require("../mailer");
 
 // ── Regla de negocio: 24 h de antelación ─────────────
 // El frontend la aplica con sePuedeCancelar (src/utilidades/funciones.js),
@@ -151,6 +152,37 @@ const estaBloqueado = async (db, idProfesional, fecha, hora) => {
     .input("hora", sql.VarChar, hora)
     .query("SELECT idBloqueo FROM BloqueoHorario WHERE idProfesional = @idProfesional AND fecha = @fecha AND (hora IS NULL OR hora = @hora)");
   return r.recordset.length > 0;
+};
+
+// ── Mail de confirmación ──────────────────────────────
+// Junta los datos que el POST /turnos ya validó (nombres de cliente,
+// profesional y servicio no vienen en el body ni en el JWT) y manda el
+// aviso. Se corre como mejor esfuerzo: ver el catch en el punto de llamada.
+const avisarReservaPorMail = async (db, { idCliente, idProfesional, idServicio, fecha, hora }) => {
+  const r = await new sql.Request(db)
+    .input("idCliente", sql.Int, idCliente)
+    .input("idProfesional", sql.Int, idProfesional)
+    .input("idServicio", sql.Int, idServicio)
+    .query(`
+      SELECT c.email,
+             LTRIM(RTRIM(c.nombre + ' ' + ISNULL(c.apellido, ''))) AS cliente,
+             LTRIM(RTRIM(p.nombre + ' ' + ISNULL(p.apellido, ''))) AS profesional,
+             s.nombre AS servicio, s.precio, s.duracion_minutos
+      FROM Cliente c
+      CROSS JOIN Profesional p
+      CROSS JOIN Servicio s
+      WHERE c.idCliente = @idCliente
+        AND p.idProfesional = @idProfesional
+        AND s.idServicio = @idServicio
+    `);
+  if (r.recordset.length === 0) return;
+  const { email, cliente, profesional, servicio, precio, duracion_minutos } = r.recordset[0];
+  if (!email) return;
+  await enviarMail({
+    para: email,
+    asunto: `Turno reservado: ${formatearFecha(fecha)} a las ${hora} hs`,
+    html: htmlConfirmacionTurno({ cliente, servicio, profesional, fecha, hora, precio, duracion: duracion_minutos }),
+  });
 };
 
 // ── Disponibilidad (turnos libres/ocupados) ───────────
@@ -383,6 +415,13 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
 
       await transaction.commit();
       res.status(201).json({ mensaje: "Turno reservado.", idTurno: result.recordset[0].idTurno });
+
+      // Se dispara DESPUÉS de responder y con catch propio: un fallo de Gmail
+      // (sin App Password, límite diario, caída) solo se loguea y nunca hace
+      // fallar la reserva, que ya está confirmada en la base.
+      avisarReservaPorMail(db, { idCliente, idProfesional, idServicio, fecha, hora })
+        .then(() => console.log("Mail de confirmación enviado."))
+        .catch((e) => console.error("No se pudo enviar el mail de confirmación:", e.message));
     } catch (error) {
       try { await transaction.rollback(); } catch {}
       throw error;
