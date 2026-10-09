@@ -1,9 +1,12 @@
 // Barra de filtros compartida por los paneles de Turnos y Agenda:
 // profesional, estado y fecha. El estado "Cancelado" se puede ocultar con
 // incluirCancelado={false} (lo usa Agenda, que no muestra cancelados).
+import { fechaAIso } from '../../utilidades/funciones';
+
 function FiltrosTurnos({ profesionales, etiquetasEstado, filtroProfesional, setFiltroProfesional, filtroEstado, setFiltroEstado, filtroFecha, setFiltroFecha, incluirCancelado = true }) {
   const estados = Object.entries(etiquetasEstado).filter(([value]) => incluirCancelado || value !== 'Cancelado');
-  const hayFiltros = filtroProfesional !== 'todos' || filtroEstado !== 'todos' || filtroFecha !== '';
+  const fechaHoy = fechaAIso(new Date());
+  const hayFiltros = filtroProfesional !== 'todos' || filtroEstado !== 'todos' || filtroFecha !== fechaHoy;
   const limpiar = () => { setFiltroProfesional('todos'); setFiltroEstado('todos'); setFiltroFecha(''); };
   return (
     <div className="admin-schedule-toolbar">

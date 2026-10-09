@@ -21,11 +21,12 @@
 // en la otra).
 import { useState } from 'react';
 import FiltrosTurnos from './FiltrosTurnos';
+import { fechaAIso } from '../../utilidades/funciones';
 
 function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado, opcionesEstado, turnos, onCambioFormularioTurno, onGuardarTurno, onBorrarTurno, onEmpezarEdicionTurno, servicios, turnoSeleccionado }) {
   const [filtroProfesional, setFiltroProfesional] = useState('todos');
   const [filtroEstado, setFiltroEstado] = useState('todos');
-  const [filtroFecha, setFiltroFecha] = useState('');
+  const [filtroFecha, setFiltroFecha] = useState(() => fechaAIso(new Date()));
   const turnosFiltrados = turnos.filter((b) =>
     (filtroProfesional === 'todos' || String(b.idProfesional) === String(filtroProfesional)) &&
     (filtroEstado === 'todos' || b.estado === filtroEstado) &&
@@ -36,6 +37,7 @@ function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado,
       <h2>Editar turnos</h2>
       <p className="admin-note">Elegí un turno de la lista para cargarlo en el formulario y editarlo.</p>
       <FiltrosTurnos profesionales={profesionales} etiquetasEstado={etiquetasEstado} filtroProfesional={filtroProfesional} setFiltroProfesional={setFiltroProfesional} filtroEstado={filtroEstado} setFiltroEstado={setFiltroEstado} filtroFecha={filtroFecha} setFiltroFecha={setFiltroFecha} />
+      <div className="admin-divider"><span>Editar turno</span></div>
       {turnoSeleccionado ? (
         <form className="admin-form admin-booking-form" onSubmit={onGuardarTurno}>
           <div className="admin-inline-grid">

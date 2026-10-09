@@ -12,13 +12,14 @@
 // dentro de cada día van primero los pendientes y después los expirados.
 import { useMemo, useState } from 'react';
 import FiltrosTurnos from './FiltrosTurnos';
+import { fechaAIso } from '../../utilidades/funciones';
 
 const pesoEstado = (estado) => (estado === 'Confirmado' ? 0 : estado === 'Expirado' ? 2 : 1);
 
 function Agenda({ turnos, profesionales, etiquetasEstado, clasesEstado }) {
   const [filtroProfesional, setFiltroProfesional] = useState('todos');
   const [filtroEstado, setFiltroEstado] = useState('todos');
-  const [filtroFecha, setFiltroFecha] = useState('');
+  const [filtroFecha, setFiltroFecha] = useState(() => fechaAIso(new Date()));
   const profesionalesPorId = useMemo(() => new Map(profesionales.map((b) => [String(b.id), b])), [profesionales]);
   const gruposAgenda = useMemo(() => {
     const filtrados = (Array.isArray(turnos) ? turnos : []).filter((b) =>
