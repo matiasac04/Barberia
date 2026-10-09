@@ -19,11 +19,23 @@
 // Admin.jsx, que es el único lugar donde se definen: antes estaba duplicado
 // acá y las dos copias ya no coincidían ('Pendiente' en una, 'Confirmado'
 // en la otra).
+import { useState } from 'react';
+import FiltrosTurnos from './FiltrosTurnos';
+
 function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado, opcionesEstado, turnos, onCambioFormularioTurno, onGuardarTurno, onBorrarTurno, onEmpezarEdicionTurno, servicios, turnoSeleccionado }) {
+  const [filtroProfesional, setFiltroProfesional] = useState('todos');
+  const [filtroEstado, setFiltroEstado] = useState('todos');
+  const [filtroFecha, setFiltroFecha] = useState('');
+  const turnosFiltrados = turnos.filter((b) =>
+    (filtroProfesional === 'todos' || String(b.idProfesional) === String(filtroProfesional)) &&
+    (filtroEstado === 'todos' || b.estado === filtroEstado) &&
+    (!filtroFecha || b.fecha === filtroFecha)
+  );
   return (
     <article className="simple-card admin-panel">
       <h2>Editar turnos</h2>
       <p className="admin-note">Elegí un turno de la lista para cargarlo en el formulario y editarlo.</p>
+      <FiltrosTurnos profesionales={profesionales} etiquetasEstado={etiquetasEstado} filtroProfesional={filtroProfesional} setFiltroProfesional={setFiltroProfesional} filtroEstado={filtroEstado} setFiltroEstado={setFiltroEstado} filtroFecha={filtroFecha} setFiltroFecha={setFiltroFecha} />
       {turnoSeleccionado ? (
         <form className="admin-form admin-booking-form" onSubmit={onGuardarTurno}>
           <div className="admin-inline-grid">
@@ -51,7 +63,7 @@ function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado,
         </form>
       ) : <p className="admin-note">No hay turnos para editar.</p>}
       <div className="admin-list">
-        {turnos.map((b) => (
+        {turnosFiltrados.map((b) => (
           <div key={b.id} className="admin-row admin-booking-row">
             <div>
               <strong>{b.nombreCliente}</strong>
@@ -64,6 +76,7 @@ function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado,
             </div>
           </div>
         ))}
+        {turnosFiltrados.length === 0 ? <p className="admin-empty">No hay turnos que coincidan con los filtros.</p> : null}
       </div>
     </article>
   );

@@ -12,8 +12,8 @@
 //    Resumen · Profesionales · Servicios · Horarios · Turnos · Agenda
 // 2. Manejar el ESTADO DE LOS FORMULARIOS (alta/edición de profesional,
 //    servicio y turno) —incluido qué registro se está editando (form.id)
-// 3. DERIVAR datos: agenda agrupada por fecha (gruposAgenda) y conteo
-//    de turnos por estado (conteoEstados) para las tarjetas del resumen.
+// 3. DERIVAR datos: conteo de turnos por estado (conteoEstados) para las
+//    tarjetas del resumen. La agenda se agrupa dentro de su propio panel.
 // 4. Delegar el render a cada panel, pasándole datos y handlers.
 //
 // Si el usuario cambia de profesional/turno, se reselecciona el primero
@@ -69,12 +69,7 @@ function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueo
   const [aviso, setAviso] = useState({ type: 'idle', message: 'Administrá profesionales, servicios, horarios y turnos desde aquí.' });
   useEffect(() => { if (profesionales.length === 0) { setProfesionalHorario(''); return; } if (!profesionales.some((b) => String(b.id) === String(profesionalHorario))) setProfesionalHorario(profesionales[0].id); }, [profesionales, profesionalHorario]);
   useEffect(() => { if (turnos.length === 0) { setTurnoSeleccionadoId(''); setFormularioTurno(crearFormularioTurno()); return; } const sel = turnos.find((b) => b.id === turnoSeleccionadoId) ?? turnos[0]; setTurnoSeleccionadoId(sel.id); setFormularioTurno(crearFormularioTurno(sel)); }, [turnos, turnoSeleccionadoId]);
-  // ── Datos derivados (agenda y estados) ────────────
-  const gruposAgenda = useMemo(() => {
-    const g = new Map();
-    turnos.filter((b) => b.estado !== 'Cancelado').slice().sort((l, r) => `${l.fecha}T${l.hora}`.localeCompare(`${r.fecha}T${r.hora}`)).forEach((b) => { const e = g.get(b.fecha) ?? []; e.push(b); g.set(b.fecha, e); });
-    return [...g.entries()];
-  }, [turnos]);
+  // ── Datos derivados (conteo por estado) ───────────
   const conteoEstados = useMemo(() => turnos.reduce((a, b) => { a[b.estado] = (a[b.estado] ?? 0) + 1; return a; }, { Confirmado: 0, Completado: 0, NoSePresento: 0, Cancelado: 0, Expirado: 0 }), [turnos]);
   // ── Handlers de formularios ───────────────────────
   const guardarProfesional = async (e) => {
@@ -136,7 +131,7 @@ function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueo
         {pestanaActiva === 'servicios' && <Servicios servicioVacio={servicioVacio} onCancelarEdicionServicio={() => setFormularioServicio(servicioVacio)} onBorrarServicio={confirmarBorradoServicio} onCambioFormularioServicio={setFormularioServicio} onGuardarServicio={guardarServicio} onEmpezarEdicionServicio={cargarServicioEnForm} formularioServicio={formularioServicio} servicios={servicios} />}
         {pestanaActiva === 'horarios' && <Horarios profesionales={profesionales} bloqueosPorFecha={bloqueosPorFecha} horarioLaboral={horarioLaboral} onGuardarBloqueos={onGuardarBloqueos} onGuardarHorarios={onGuardarHorarios} profesionalHorario={profesionalHorario} fechaHorario={fechaHorario} setProfesionalHorario={setProfesionalHorario} setFechaHorario={setFechaHorario} horariosFijos={horariosFijos} />}
         {pestanaActiva === 'turnos' && <Turnos profesionales={profesionales} formularioTurno={formularioTurno} etiquetasEstado={etiquetasEstado} clasesEstado={clasesEstado} opcionesEstado={opcionesEstado} turnos={turnos} onCambioFormularioTurno={setFormularioTurno} onGuardarTurno={guardarTurno} onBorrarTurno={onBorrarTurno} onEmpezarEdicionTurno={cargarTurnoEnForm} servicios={servicios} turnoSeleccionado={turnoSeleccionado} />}
-        {pestanaActiva === 'agenda' && <Agenda gruposAgenda={gruposAgenda} profesionales={profesionales} etiquetasEstado={etiquetasEstado} clasesEstado={clasesEstado} />}
+        {pestanaActiva === 'agenda' && <Agenda turnos={turnos} profesionales={profesionales} etiquetasEstado={etiquetasEstado} clasesEstado={clasesEstado} />}
       </section>
       <div className={`simple-feedback ${aviso.type} admin-feedback`}>{aviso.message}</div>
       <PieDePagina />
