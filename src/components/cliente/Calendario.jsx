@@ -6,7 +6,7 @@
 // Muestra un grid mensual para que el cliente elija el día del turno.
 // Calcula qué días están dentro del rango [minDate, maxDate] (hoy → +30),
 // pinta el estado por color/etiqueta (libre/parcial/lleno/cerrado) según
-// cuántos slots libres tiene ese día (getFreeCount) y evita seleccionar
+// cuántos horarios libres tiene ese día (getFreeCount) y evita seleccionar
 // domingos/lunes o fuera de rango.
 //
 // FLUJO:
@@ -18,7 +18,7 @@
 // 6. Al click: valida inRange y llama onSelectDate(dateIso)
 //
 // Etiquetas: Libre (freeCount==totalSlots), Parcial (0<freeCount<totalSlots),
-// Lleno (0), Cerrado (null = domingo/lunes o sin slots)
+// Lleno (0), Cerrado (null = domingo/lunes o sin horarios)
 import { useState } from 'react';
 const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];

@@ -50,6 +50,11 @@ const opcionesPestana = [
   { id: 'resumen', label: 'Resumen' }, { id: 'profesionales', label: 'Profesionales' }, { id: 'servicios', label: 'Servicios' },
   { id: 'horarios', label: 'Horarios' }, { id: 'turnos', label: 'Turnos' }, { id: 'agenda', label: 'Agenda' },
 ];
+// Lee la pestaña del hash de la URL (#admin/<pestana>). Si no es válida, cae en 'resumen'.
+const leerPestanaDesdeHash = () => {
+  const m = window.location.hash.match(/^#admin\/([a-z]+)$/);
+  return m && opcionesPestana.some((t) => t.id === m[1]) ? m[1] : 'resumen';
+};
 const profesionalVacio = { id: '', name: '', email: '', telefono: '' };
 const servicioVacio = { id: '', name: '', price: '', duracion: '' };
 const crearFormularioTurno = (b) => ({
@@ -59,7 +64,7 @@ const crearFormularioTurno = (b) => ({
 
 function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueosPorFecha, errorCarga, horarioLaboral, onRegistrarProfesional, onRegistrarServicio, onBorrarProfesional, onBorrarTurno, onBorrarServicio, onCerrarSesion, onGuardarBloqueos, onGuardarHorarios, onCambiarActivoProfesional, onEditarProfesional, onEditarTurno, onEditarServicio, servicios, horariosFijos }) {
   // ── Estado de formularios y selección ─────────────
-  const [pestanaActiva, setPestanaActiva] = useState('resumen');
+  const [pestanaActiva, setPestanaActiva] = useState(leerPestanaDesdeHash);
   const [formularioProfesional, setFormularioProfesional] = useState(profesionalVacio);
   const [formularioServicio, setFormularioServicio] = useState(servicioVacio);
   const [profesionalHorario, setProfesionalHorario] = useState(profesionales[0]?.id ?? '');
@@ -69,6 +74,22 @@ function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueo
   const [aviso, setAviso] = useState({ type: 'idle', message: 'Administrá profesionales, servicios, horarios y turnos desde aquí.' });
   useEffect(() => { if (profesionales.length === 0) { setProfesionalHorario(''); return; } if (!profesionales.some((b) => String(b.id) === String(profesionalHorario))) setProfesionalHorario(profesionales[0].id); }, [profesionales, profesionalHorario]);
   useEffect(() => { if (turnos.length === 0) { setTurnoSeleccionadoId(''); setFormularioTurno(crearFormularioTurno()); return; } const sel = turnos.find((b) => b.id === turnoSeleccionadoId) ?? turnos[0]; setTurnoSeleccionadoId(sel.id); setFormularioTurno(crearFormularioTurno(sel)); }, [turnos, turnoSeleccionadoId]);
+  // ── Navegación por historial ──────────────────────
+  // Sincroniza la pestaña activa con el hash (#admin/<pestana>) para que el
+  // botón atrás/adelante del navegador navegue entre pestañas y no salga de la
+  // app. Al montar normaliza la URL y queda escuchando 'popstate'.
+  useEffect(() => {
+    const inicial = leerPestanaDesdeHash();
+    try { history.replaceState({ adminTab: inicial }, '', `#admin/${inicial}`); } catch {}
+    const onPop = () => setPestanaActiva(leerPestanaDesdeHash());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const cambiarPestana = (id) => {
+    if (id === pestanaActiva) return;
+    setPestanaActiva(id);
+    try { history.pushState({ adminTab: id }, '', `#admin/${id}`); } catch {}
+  };
   // ── Datos derivados (conteo por estado) ───────────
   const conteoEstados = useMemo(() => turnos.reduce((a, b) => { a[b.estado] = (a[b.estado] ?? 0) + 1; return a; }, { Confirmado: 0, Completado: 0, NoSePresento: 0, Cancelado: 0, Expirado: 0 }), [turnos]);
   // ── Handlers de formularios ───────────────────────
@@ -123,7 +144,7 @@ function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueo
           esto, un backend caído se veía como un panel vacío pero "funcionando". */}
       {errorCarga && <div className="simple-feedback error admin-feedback">{errorCarga} Los paneles de abajo se muestran igual, pero esos datos están vacíos o desactualizados.</div>}
       <section className="simple-card admin-tabs">
-        {opcionesPestana.map((t) => <button key={t.id} type="button" aria-pressed={pestanaActiva === t.id} className={`admin-tab ${pestanaActiva === t.id ? 'selected' : ''}`} onClick={() => setPestanaActiva(t.id)}>{t.label}</button>)}
+        {opcionesPestana.map((t) => <button key={t.id} type="button" aria-pressed={pestanaActiva === t.id} className={`admin-tab ${pestanaActiva === t.id ? 'selected' : ''}`} onClick={() => cambiarPestana(t.id)}>{t.label}</button>)}
       </section>
       <section className="admin-content">
         {pestanaActiva === 'resumen' && <Resumen opcionesEstado={opcionesEstado} conteoEstados={conteoEstados} />}

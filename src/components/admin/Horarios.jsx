@@ -21,7 +21,7 @@
 //    - editar() llama onGuardarBloqueos (App → POST /profesionales/:id/bloqueos)
 //      que REEMPLAZA los bloqueos de esa fecha.
 //
-// Impacto en el turno: los slots bloqueos + fuera de horario NO aparecen
+// Impacto en el turno: los horarios bloqueados + los fuera de horario NO aparecen
 // disponibles en Inicio.jsx (horariosLibresDelDia filtra).
 import { useEffect, useState } from 'react';
 import { DIAS_ATENCION, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, fechaAIso } from '../../utilidades/funciones';

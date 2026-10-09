@@ -20,12 +20,12 @@
 //    → primero valida el token, después el rol, después ejecuta.
 //
 // El token lo firma /login (jsonwebtoken) con 1h de vencimiento. El frontend
-// lo guarda en localStorage y lo reenvía en cada request (ver src/servicios/consultas.js).
+// lo guarda en localStorage y lo reenvía en cada request (ver src/servicios/api.js).
 const jwt = require("jsonwebtoken");
 
 // Falla RÁPIDO si no hay secreto: es una configuración obligatoria y sin ella
 // nadie podría firmar ni verificar tokens. Mejor arrancar y ver el error que
-// dejarlo accepting tokens firmados con "undefined".
+// dejar que acepte tokens firmados con "undefined".
 if (!process.env.JWT_SECRET) {
   console.error("Falta JWT_SECRET en el entorno (server/.env). El servicio no se puede iniciar sin él.");
   process.exit(1);

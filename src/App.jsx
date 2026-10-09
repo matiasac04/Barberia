@@ -31,10 +31,10 @@
 // REGLAS DE NEGOCIO (aplicadas aquí + en funciones.js):
 //   - Domingos (0) y lunes (1): DÍAS CERRADOS (esDiaCerrado).
 //   - Ventana de reservas: ÚNICAMENTE desde HOY (00:00) hasta HOY + 30 DÍAS (23:59:59).
-//   - Turnos de 30 minutos. Los slots disponibles salen del HorarioLaboral
+//   - Turnos de 30 minutos. Los horarios disponibles salen del HorarioLaboral
 //     del profesional (DB). Si NO tiene horario cargado, usa horariosFijos
 //     de respaldo (src/datos/semilla.js).
-//   - Disponibilidad = slots del día − (turnos ocupados + bloqueos puntuales/día completo).
+//   - Disponibilidad = horarios del día − (turnos ocupados + bloqueos puntuales/día completo).
 //   - Cancelaciones/reprogramaciones cliente: requieren > 24 hs de antelación
 //     (validado también en backend para que no se salteen por API).
 // ═══════════════════════════════════════════════════════════════════
@@ -48,11 +48,11 @@ import Inicio from './components/cliente/Inicio';             // Turnero del cli
 import IniciarSesion from './components/ingreso/IniciarSesion'; // Login y registro
 import MisTurnos from './components/cliente/MisTurnos';       // Historial "Mis turnos"
 import WhatsApp from './components/comunes/WhatsApp';        // Botón flotante de WhatsApp
-// Datos semilla (fallback de arranque, la DB es la fuente real):
+// Datos semilla (respaldo de arranque, la DB es la fuente real):
 import { horariosFijos } from './datos/semilla';
 // Funciones de la API (todas las llamadas al backend, ver src/servicios/api.js):
 import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, verificarToken } from './servicios/api';
-// Utilidades de fechas/slots/estados (ver src/utilidades/funciones.js):
+// Utilidades de fechas/horarios/estados (ver src/utilidades/funciones.js):
 import { sePuedeCancelar, formatoFecha, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, horariosPasados, esDiaCerrado, estadoDelTurno, datosDelDia, fechaAIso } from './utilidades/funciones';
 
 // ── Constantes de calendario ─────────────────────────
@@ -98,7 +98,7 @@ function App() {
   const [servicios, setServicios] = useState([]);
 
   // -------------------------------------------------------------------
-  // SELECCIÓN del turnero (el wizard del cliente)
+  // SELECCIÓN del turnero (el asistente del cliente)
   // Guarda lo que el usuario va eligiendo paso a paso: profesional,
   // servicio, fecha, hora, y sus datos de contacto para confirmar.
   // -------------------------------------------------------------------
@@ -120,8 +120,8 @@ function App() {
   // -------------------------------------------------------------------
   // DISPONIBILIDAD (lo que está ocupado / bloqueado)
   //   horariosOcupadosApi → horas ocupadas de la fecha+barbero elegidos
-  //   cargandoDisponibilidad → spinner mientras se consulta a la API
-  //   bloqueosPorFecha       → bloqueos puntuales del admin (día o slot)
+  //   cargandoDisponibilidad → indicador de carga mientras se consulta a la API
+  //   bloqueosPorFecha       → bloqueos puntuales del admin (día u horario)
   //   horarioLaboral      → horario semanal por profesional (si está en DB)
   //   rangoReservado         → TODOS los turnos ocupados de los próximos 30
   //                         días, para pintar el calendario mensual
@@ -282,11 +282,11 @@ return () => { cancelado = true; };
   // vez que cambia el día seleccionado o el profesional.
   const cargarDisponibilidad = useCallback(() => {
     if (!token || !fechaSeleccionada || !profesionalSeleccionado) return;  // falta sesión o falta elegir algo
-    setLoadingAvailability(true);  // prende el spinner
+    setLoadingAvailability(true);  // prende el indicador de carga
     obtenerTurnosDisponibles(fechaSeleccionada, profesionalSeleccionado, token)
       .then((r) => setHorariosOcupadosApi((r?.turnosOcupados ?? []).map((t) => normalizarHoraApi(t.horaInicio)).filter(Boolean)))
       .catch(() => setHorariosOcupadosApi([]))
-      .finally(() => setLoadingAvailability(false));  // siempre apaga el spinner
+      .finally(() => setLoadingAvailability(false));  // siempre apaga el indicador de carga
   }, [token, fechaSeleccionada, profesionalSeleccionado, normalizarHoraApi]);
   useEffect(() => { cargarDisponibilidad(); }, [cargarDisponibilidad]);
 
@@ -336,7 +336,7 @@ return () => { cancelado = true; };
   }, [token, expulsarPorSesion, normalizarHoraApi]);
   useEffect(() => { if (sesionIniciada && currentUser?.role === 'admin') cargarTurnosAdmin(); }, [sesionIniciada, cargarTurnosAdmin, currentUser?.role]);
 
-  // ── Disponibilidad del día (slots libres/ocupados) ──
+  // ── Disponibilidad del día (horarios libres/ocupados) ──
   // Construye el "mapa de ocupación": { [idBarbero]: { 'YYYY-MM-DD': ['10:30', ...] } }
   // combinando el rango del calendario mensual (rangoReservado) con los turnos
   // ya cargados (turnosConfirmados). `meter()` agrega una hora al mapa.
@@ -363,7 +363,7 @@ return () => { cancelado = true; };
   const patronDiaSeleccionado = patronDelDia(diaSeleccionado);  // 'weekday' | 'saturday' | null
   const fechaFormateada = formatoFecha(diaSeleccionado);     // { label, date }
   const diaActual = { id: patronDiaSeleccionado ?? 'dom', label: fechaFormateada.label, date: fechaFormateada.date };
-  // Slots posibles del día: usa el horario laboral si existe en la DB,
+  // Horarios posibles del día: usa el horario laboral si existe en la DB,
   // si no, cae en el horario fijo de respaldo (horariosFijos de semilla.js)
   const horariosDelDia = patronDiaSeleccionado ? horariosDeLaSemana(horarioLaboral, profesionalSeleccionado, patronDiaSeleccionado, horariosFijos) : [];
   // Lo bloqueado = turnos ya tomados + bloqueos puntuales que cargó el admin
@@ -373,10 +373,10 @@ return () => { cancelado = true; };
   // de la hora elige uno válido). El backend además los rechaza con 400.
   const horariosPasadosHoy = horariosPasados(fechaSeleccionada, horariosDelDia);
   const horariosNoDisponibles = [...new Set([...horariosBloqueadosLocales, ...horariosOcupadosApi, ...horariosPasadosHoy])];  // sin duplicados
-  // DISPONIBLES = todos los slots del día − los no disponibles
+  // DISPONIBLES = todos los horarios del día − los no disponibles
   const horariosLibres = horariosDelDia.filter((s) => !horariosNoDisponibles.includes(s));
-  // Auto-ajuste de la hora elegida: si no quedan slots la limpia; si el
-  // slot elegido dejó de estar disponible, elige el primero libre.
+  // Auto-ajuste de la hora elegida: si no quedan horarios la limpia; si el
+  // horario elegido dejó de estar disponible, elige el primero libre.
   useEffect(() => { if (horariosLibres.length === 0) { setHoraSeleccionada(''); return; } if (!horariosLibres.includes(horaSeleccionada)) setHoraSeleccionada(horariosLibres[0]); }, [horariosLibres, horaSeleccionada]);
   const horaEstaOcupada = horaSeleccionada ? horariosNoDisponibles.includes(horaSeleccionada) : true;
   // Reglas de negocio aplicadas al día seleccionado:
@@ -492,7 +492,7 @@ return () => { cancelado = true; };
   };
 
   // ── Datos derivados para vista del cliente ─────────
-  const cantidadOcupados = horariosDelDia.length - horariosLibres.length;  // cuántos slots del día están ocupados
+  const cantidadOcupados = horariosDelDia.length - horariosLibres.length;  // cuántos horarios del día están ocupados
   const emailUsuario = currentUser?.email ?? '';
   // Turnos del cliente logueado = los confirmadoBookings que son SUYOS
   //
@@ -573,7 +573,7 @@ return () => { cancelado = true; };
       return { ok: true };
     } catch (error) { if (error.status === 401) expulsarPorSesion(); return { ok: false, error: error.message || 'Error al eliminar el profesional.' }; }
   };
-  // Activar / desactivar (toggle del checkbox en el panel de admin).
+  // Activar / desactivar (interruptor del checkbox en el panel de admin).
   const cambiarActivoProfesional = async (id, activo) => {
     try {
       await actualizarProfesional(id, { activo: !activo }, token);

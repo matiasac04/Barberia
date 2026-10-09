@@ -13,7 +13,7 @@ Spa de barbería (reservas de turnos) en React 19 + Vite 8, sin TypeScript, con 
 - No hay tests ni script de test.
 
 ## Arquitectura / flujo
-- El frontend llama a `src/servicios/consultas.js` (helper `peticion()`), que hace `fetch` a `http://localhost:3000`.
+- El frontend llama a `src/servicios/api.js` (helper `peticion()`), que hace `fetch` a `http://localhost:3000`.
 - El server (`server/index.js`) monta las rutas JWT-protected (registrar/login, turnos, profesionales, servicios, horarios y bloqueos) desde `server/rutas/`.
 - Auth: JWT firmado en `server/autenticacion.js`, secret en `server/.env` (`JWT_SECRET`).
 - `currentUser.role` en `App.jsx` decide si se renderiza `Admin` o el turnero del cliente.

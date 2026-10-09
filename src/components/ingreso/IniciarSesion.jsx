@@ -20,10 +20,12 @@
 //
 // avisoAcceso muestra mensajes de éxito/error del proceso (vienen de App.jsx).
 // Todos los handlers y valores vienen por props desde App.jsx.
+import { useState } from 'react';
 import PieDePagina from '../comunes/PieDePagina';
 import logoTijera from '../../assets/logo-tijera.svg';
 function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta, ingresarConGoogle, correoIngreso, claveIngreso, onMostrarIngreso, onMostrarRegistro, formularioRegistro, setCorreoIngreso, setClaveIngreso, setFormularioRegistro }) {
   const esRegistro = pantallaAcceso === 'registro';
+  const [verClave, setVerClave] = useState(false);
   // ── Render de ingreso o registro ────────────────────
   return (
     <main className="simple-page auth-page">
@@ -63,8 +65,12 @@ function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta
             <div className="auth-card-head"><div><h2>Entrá a tu cuenta</h2></div><p>Reservá y administrá tus turnos desde una sola pantalla.</p></div>
             <div className="auth-fields">
               <input type="text" placeholder="Usuario o mail" value={correoIngreso} onChange={(e) => setCorreoIngreso(e.target.value)} />
-              <input type="password" placeholder="Contraseña" value={claveIngreso} onChange={(e) => setClaveIngreso(e.target.value)} />
+              <input type={verClave ? 'text' : 'password'} placeholder="Contraseña" value={claveIngreso} onChange={(e) => setClaveIngreso(e.target.value)} />
             </div>
+            <label className="auth-toggle">
+              <input type="checkbox" checked={verClave} onChange={(e) => setVerClave(e.target.checked)} />
+              Mostrar contraseña
+            </label>
             <button className="auth-submit primary" type="submit">Iniciar sesión</button>
             <button className="auth-submit secondary" type="button" onClick={onMostrarRegistro}>Registrarme</button>
             <span className="auth-divider">o</span>

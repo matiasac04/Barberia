@@ -18,14 +18,14 @@
 //
 // 1. LA BAJA ES LÓGICA, NO FÍSICA.
 //    DELETE pone activo = 0 en vez de borrar la fila. Motivo: si un
-//    profesional tiene turnos PASSADOS, borrarlo rompería el historial (o
+//    profesional tiene turnos pasados, borrarlo rompería el historial (o
 //    lo dejaría huérfano). Con la baja lógica el turno viejo sigue
 //    mostrando a su profesional, pero el cliente ya no puede reservar con él
 //    (el GET sin incluirInactivos lo filtra por activo = 1).
 //
 // 2. EL EMAIL ES OBLIGATORIO EN LA DB, PERO NO EN LA UI.
 //    La tabla Profesional tiene email UNIQUE. Si el admin no lo carga, se
-//    genera uno interno fictitious (prof_<timestamp>_<random>@barberia.local)
+//    genera uno interno ficticio (prof_<timestamp>_<random>@barberia.local)
 //    para no romper el UNIQUE. Por eso crear SÍ puede dar 409 si el admin
 //    cargó un email repetido a propósito.
 //
@@ -33,7 +33,7 @@
 //    PUT /horarios borra TODAS las filas del profesional e inserta las
 //    nuevas; POST /bloqueos borra las de ESE DÍA e inserta las nuevas.
 //    Van en transacción: si un INSERT falla a la mitad, no queda un
-//    professional con la mitad de su horario viejo y la mitad del nuevo.
+//    profesional con la mitad de su horario viejo y la mitad del nuevo.
 const router = require("express").Router();
 
 const { sql, getPool } = require("../conexion");
@@ -125,7 +125,7 @@ router.delete("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res
 });
 
 // PATCH /profesionales/:id — edición parcial (solo admin).
-// Casos de uso: editar nombre/telefono, o el toggle activar/desactivar
+// Casos de uso: editar nombre/telefono, o el interruptor activar/desactivar
 // (el admin manda { activo: true/false }). Mismo patrón de SET dinámico que
 // servicios. Si no viene ningún campo → 400.
 router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res) => {
@@ -159,7 +159,7 @@ router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res)
       set.push("email = @email");
       reqPatch.input("email", sql.VarChar, emailFinal);
     }
-    // activo llega como boolean (del toggle del admin) → se guarda como BIT.
+    // activo llega como boolean (del interruptor del admin) → se guarda como BIT.
     if (typeof req.body.activo === "boolean") {
       set.push("activo = @activo");
       reqPatch.input("activo", sql.Bit, req.body.activo ? 1 : 0);
@@ -279,7 +279,7 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
 
 // ── Bloqueos por fecha ────────────────────────────────
 // GET /bloqueos — todos los bloqueos (con token). Fecha como texto
-// 'YYYY-MM-DD'. El frontend los usa para tapar slots en el calendario y en
+// 'YYYY-MM-DD'. El frontend los usa para tapar horarios en el calendario y en
 // el cálculo de disponibles (horariosLibresDelDia).
 router.get("/bloqueos", jwtMiddleware, async (req, res) => {
   try {
@@ -315,17 +315,17 @@ router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (r
   if (!diaCompleto && !Array.isArray(slots)) {
     return res.status(400).json({ error: 'Mandá "diaCompleto": true para bloquear el día entero, o "slots": [] para desbloquearlo.' });
   }
-  // Los slots se validan ANTES de borrar nada. Además se filtra el caso
+  // Los horarios se validan ANTES de borrar nada. Además se filtra el caso
   // peligroso: una hora NULL en BloqueoHorario significa "día completo
   // bloqueado" (es así como lo interpreta el servidor al leer y el frontend
   // al calcular la disponibilidad). Antes, un null perdido dentro del array
-  // terminaba bloqueando el día entero cuando el admin intención era liberar
+  // terminaba bloqueando el día entero cuando la intención del admin era liberar
   // un solo horario.
   if (Array.isArray(slots)) {
     for (const slot of slots) {
       if (slot == null) continue; // no bloquear nada (se traducía en "cerrar el día")
       const errHora = errorHora(slot);
-      if (errHora) return res.status(400).json({ error: `Slot inválido: ${errHora}` });
+      if (errHora) return res.status(400).json({ error: `Horario inválido: ${errHora}` });
     }
   }
   try {
@@ -355,7 +355,7 @@ router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (r
           .input("fecha", sql.Date, fecha)
           .query("INSERT INTO BloqueoHorario (idProfesional, fecha, hora) VALUES (@id, @fecha, NULL)");
       }
-      // Caso B: horarios sueltos → una fila por slot.
+      // Caso B: horarios sueltos → una fila por horario.
       else if (Array.isArray(slots)) {
         for (const slot of slots) {
           // Los null ya se filtraron en la validación de arriba; el filtro se

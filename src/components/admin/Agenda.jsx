@@ -45,7 +45,7 @@ function Agenda({ turnos, profesionales, etiquetasEstado, clasesEstado }) {
       <h2>Agenda</h2>
       <p className="admin-note">Filtrá por profesional, estado o fecha. Primero los turnos pendientes y al final los expirados.</p>
       <FiltrosTurnos profesionales={profesionales} etiquetasEstado={etiquetasEstado} incluirCancelado={false} filtroProfesional={filtroProfesional} setFiltroProfesional={setFiltroProfesional} filtroEstado={filtroEstado} setFiltroEstado={setFiltroEstado} filtroFecha={filtroFecha} setFiltroFecha={setFiltroFecha} />
-      <div className="admin-agenda">
+      <div className="admin-agenda-list">
         {gruposAgenda.map(([fecha, turnosDia]) => (
           <section key={fecha} className="admin-agenda-day">
             <h3>{fecha}</h3>

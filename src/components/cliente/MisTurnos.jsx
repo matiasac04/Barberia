@@ -11,7 +11,7 @@
 // FLUJO DE REPROGRAMACIÓN:
 // 1. Cliente toca "Reprogramar" en un turno → setTurnoAReprogramar(id)
 // 2. Abre panel con Calendario (rango hoy→+30). Al elegir día:
-//    horariosLibresDelDia() calcula slots libres para ese barbero ese día
+//    horariosLibresDelDia() calcula horarios libres para ese barbero ese día
 // 3. Elige nuevo horario (chip) → setHoraReprogramar
 // 4. Confirma → onReprogramarTurno(id, nuevaFecha, nuevaHora) (App hace PATCH /turnos/:id)
 // 5. Se cierra panel y se refrescan turnos/disponibilidad

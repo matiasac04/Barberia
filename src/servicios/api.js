@@ -24,7 +24,7 @@
 //
 // ── Configuración y helper de peticiones ─────────────
 // API_URL: base del backend. En desarrollo localhost:3000.
-// En producción (Vercel + Belmo) se define VITE_API_URL en variables de entorno.
+// En producción (Vercel) se define VITE_API_URL en variables de entorno.
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 // peticion(): helper genérico para todas las requests.
@@ -58,7 +58,7 @@ const peticion = async (path, { method = "GET", token, body, headers = {} } = {}
     const err = new Error(data.error || "Error en la solicitud al servidor.");
     err.status = res.status;
     // 429: el rate limiter. El server ya manda un mensaje claro en JSON
-    // (ver message en server/index.js), así que Normally data.error alcanza.
+    // (ver message en server/index.js), así que normalmente data.error alcanza.
     // El extra es para cuando el body no es JSON (un proxy/hosting puede
     // responder 429 con texto plano o HTML) y para mostrar cuánto esperar.
     if (res.status === 429) {

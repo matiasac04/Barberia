@@ -49,7 +49,7 @@ CREATE TABLE HorarioLaboral (
 -- duración real, así que nunca puede quedar desincronizada con el servicio.
 -- OJO con el estado: los valores que usa la app son 'Confirmado' (default),
 -- 'Completado', 'NoSePresento' y 'Cancelado'. 'Cancelado' NO borra la fila:
--- libera el slot y deja el turno en el historial.
+-- libera el horario y deja el turno en el historial.
 CREATE TABLE Turno (
     idTurno INT IDENTITY(1,1) PRIMARY KEY,
     idProfesional INT REFERENCES Profesional(idProfesional),
@@ -65,7 +65,7 @@ CREATE TABLE Turno (
 );
 
 -- BloqueoHorario: bloqueo puntual del admin. hora = NULL significa "día
--- completo bloqueado" (ver getDateBlockedSlots en el frontend).
+-- completo bloqueado" (ver bloqueosDeLaFecha en el frontend).
 CREATE TABLE BloqueoHorario (
     idBloqueo      INT IDENTITY(1,1) PRIMARY KEY,
     idProfesional  INT REFERENCES Profesional(idProfesional),
@@ -74,7 +74,7 @@ CREATE TABLE BloqueoHorario (
 );
 
 -- ── Índices recomendados ──────────────────────────────
--- El backend valida la ocupación de un slot y recién después inserta, dentro
+-- El backend valida la ocupación de un horario y recién después inserta, dentro
 -- de una transacción SERIALIZABLE, así que la doble reserva ya está cubierta a
 -- nivel aplicación. Este índice la cubre TAMBIÉN a nivel base (defensa en
 -- profundidad) y además acelera las consultas de disponibilidad, que son las

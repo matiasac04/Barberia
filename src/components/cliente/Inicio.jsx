@@ -1,25 +1,25 @@
 // ═══════════════════════════════════════════════════════════════════
-// TURÑERO DEL CLIENTE — reserva de turnos en 5 pasos (wizard)
+// TURNERO DEL CLIENTE — reserva de turnos en 5 pasos (asistente)
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
 //
-// Pantalla principal del cliente. Presenta la reserva como un WIZARD de
+// Pantalla principal del cliente. Presenta la reserva como un ASISTENTE de
 // 5 pasos navegables (también visibles todos juntos en desktop):
 //   Paso 1: Elegí servicio   (chips con nombre, duración y precio)
-//   Paso 2: Elegí día        (Calendario mensual con slots libres por día)
+//   Paso 2: Elegí día        (Calendario mensual con horarios libres por día)
 //   Paso 3: Elegí barbero    (chips con avatar de iniciales + libres)
-//   Paso 4: Elegí horario    (slots del día; los ocupados van 'disabled')
+//   Paso 4: Elegí horario    (horarios del día; los ocupados van 'disabled')
 //   Paso 5: Completá datos y confirmá (nombre + teléfono → registrarTurno)
 //
 // pasoActual controla cuál panel está activo en mobile (desktop muestra
 // todos vía CSS). BarraPasos dibuja botones Volver/Siguiente.
 //
 // La disponibilidad la calcula App.jsx (horariosLibres, horariosNoDisponibles,
-// horariosDelDia) y la PASA ya filtrada; este componente solo la pinta y managea
-// el estado del wizard. registrarTurno (App.jsx) revalida y llama POST /turnos.
+// horariosDelDia) y la PASA ya filtrada; este componente solo la pinta y maneja
+// el estado del asistente. registrarTurno (App.jsx) revalida y llama POST /turnos.
 //
 // Reglas: domingos/lunes cerrados, ventana hoy→+30 días.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Calendario from './Calendario';
 import PieDePagina from '../comunes/PieDePagina';
 import Cabecera from '../comunes/Cabecera';
@@ -28,7 +28,13 @@ import { horariosLibresDelDia, patronDelDia } from '../../utilidades/funciones';
 const iniciales = (name) => name.split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 // esDiaCerrado: true si es domingo/lunes (patronDelDia devuelve null)
 const esDiaCerrado = (ds) => !patronDelDia(new Date(`${ds}T00:00:00`));
-// BarraPasos: barra de navegación del wizard (botones Volver / Siguiente)
+// Lee el paso del asistente desde el hash (#paso-N). Fuera de 1..5, cae en 1.
+const leerPasoDesdeHash = () => {
+  const m = window.location.hash.match(/^#paso-(\d)$/);
+  const n = m ? Number(m[1]) : 1;
+  return n >= 1 && n <= 5 ? n : 1;
+};
+// BarraPasos: barra de navegación del asistente (botones Volver / Siguiente)
 function BarraPasos({ onPrev, onNext }) {
   return (
     <div className="step-nav">
@@ -38,9 +44,24 @@ function BarraPasos({ onPrev, onNext }) {
   );
 }
 function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActual, diaActual, currentUser, nombreCliente, telefonoCliente, bloqueosPorFecha, diaCalendarMax, diaCalendarMin, horariosDelDia, aviso, registrarTurno, cargandoDisponibilidad, proximosTurnos, cantidadOcupados, onCerrarSesion, onVerMisTurnos, horarioLaboral, profesionalSeleccionado, fechaSeleccionada, servicioSeleccionado, horaSeleccionada, horaEstaOcupada, servicios, setNombreCliente, setTelefonoCliente, setProfesionalSeleccionado, setFechaSeleccionada, setServicioSeleccionado, setHoraSeleccionada, enviando, horariosFijos, turnosOcupados, horariosNoDisponibles }) {
-  // ── Estado del wizard móvil ─────────────────────────
-  const [pasoActual, setPasoActual] = useState(1);
+  // ── Estado del asistente móvil ──────────────────────
+  const [pasoActual, setPasoActual] = useState(leerPasoDesdeHash);
   const [infoVisible, setInfoVisible] = useState(false);
+  // ── Historial del asistente ────────────────────────
+  // Sincroniza el paso activo con el hash (#paso-N) para que el botón
+  // atrás/adelante del navegador navegue entre pasos y no salga de la app.
+  useEffect(() => {
+    const inicial = leerPasoDesdeHash();
+    try { history.replaceState({ paso: inicial }, '', `#paso-${inicial}`); } catch {}
+    const onPop = () => setPasoActual(leerPasoDesdeHash());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const irAlPaso = (n) => {
+    if (n === pasoActual) return;
+    setPasoActual(n);
+    try { history.pushState({ paso: n }, '', `#paso-${n}`); } catch {}
+  };
   // ── Lógica derivada del día y profesionales ────────
   if (!profesionalActual || !servicioActual) return null;
   const diaCerrado = diaActual.id === 'dom';
@@ -103,13 +124,13 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
                 </button>
               ))}
             </div>
-            <BarraPasos onNext={() => setPasoActual(2)} />
+            <BarraPasos onNext={() => irAlPaso(2)} />
           </div>
           <div className={`simple-group step-panel${pasoActual === 2 ? ' is-active' : ''}`} data-step="2">
             <div className="step-label"><span className="step-badge">2</span><label>Elegí el día</label></div>
             <Calendario selectedDate={fechaSeleccionada} onSelectDate={setFechaSeleccionada} minDate={diaCalendarMin} maxDate={diaCalendarMax} totalSlots={horariosDelDia.length} getFreeCount={(ds) => (esDiaCerrado(ds) ? null : horariosLibresDelDia(turnosOcupados, profesionalSeleccionado, ds, horariosFijos, bloqueosPorFecha, horarioLaboral).length)} />
             <p className="calendar-hint">Cada día muestra cuántos horarios quedan libres. Los domingos y lunes están cerrados.</p>
-            <BarraPasos onPrev={() => setPasoActual(1)} onNext={() => setPasoActual(3)} />
+            <BarraPasos onPrev={() => irAlPaso(1)} onNext={() => irAlPaso(3)} />
           </div>
           <div className={`simple-group step-panel${pasoActual === 3 ? ' is-active' : ''}`} data-step="3">
             <div className="step-label"><span className="step-badge">3</span><label>Elegí el barbero</label></div>
@@ -121,7 +142,7 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
                 </button>
               ))}
             </div>
-            <BarraPasos onPrev={() => setPasoActual(2)} onNext={() => setPasoActual(4)} />
+            <BarraPasos onPrev={() => irAlPaso(2)} onNext={() => irAlPaso(4)} />
           </div>
           <div className={`simple-group step-panel${pasoActual === 4 ? ' is-active' : ''}`} data-step="4">
             <div className="step-label"><span className="step-badge">4</span><label>Elegí el horario</label></div>
@@ -140,7 +161,7 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
                 {cargandoDisponibilidad ? <p className="hours-hint">Cargando disponibilidad...</p> : <p className="hours-hint">Los horarios tachados ya están ocupados para {profesionalActual.name} ese día.</p>}
               </>
             )}
-            <BarraPasos onPrev={() => setPasoActual(3)} onNext={() => setPasoActual(5)} />
+            <BarraPasos onPrev={() => irAlPaso(3)} onNext={() => irAlPaso(5)} />
           </div>
           <div className={`simple-group step-panel${pasoActual === 5 ? ' is-active' : ''}`} data-step="5">
             <div className="step-label"><span className="step-badge">5</span><label>Completá tus datos y confirmá</label></div>
@@ -150,7 +171,7 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
               <button className="simple-submit" type="submit" disabled={enviando}>{enviando ? 'Confirmando...' : 'Confirmar turno'}</button>
               {aviso.type === 'success' && <div className={`simple-feedback ${aviso.type}`}>{aviso.message}</div>}
             </form>
-            <BarraPasos onPrev={() => setPasoActual(4)} />
+            <BarraPasos onPrev={() => irAlPaso(4)} />
           </div>
         </article>
         <article className="simple-card">

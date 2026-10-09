@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// UTILIDADES DE FECHAS, HORARIOS, SLOTS Y ESTADOS
+// UTILIDADES DE FECHAS, HORARIOS Y ESTADOS
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONAN ESTAS FUNCIONES?
 //
@@ -7,7 +7,7 @@
 // relacionada con fechas, horarios y disponibilidad. Eso permite:
 // - Reutilizarla en App.jsx, Inicio.jsx, MisTurnos.jsx, Admin/Horarios.jsx, etc.
 // - Mantener las reglas de negocio en UN SOLO LUGAR (ventana de 30 días,
-//   días cerrados, slots de 30 min, >24h para cancelar).
+//   días cerrados, horarios de 30 min, >24h para cancelar).
 // - Hacerla fácil de testear (solo recibe datos y devuelve resultados).
 //
 // Convención: trabaja con fechas en formato 'YYYY-MM-DD' (ISO sin hora)
@@ -16,7 +16,7 @@
 // FLUJO BÁSICO:
 // 1. fechaAIso() normaliza cualquier valor a 'YYYY-MM-DD'
 // 2. patronDelDia() traduce getDay() (JS) a patrón (lun/mar/mie/jue/vie/sab)
-// 3. horariosDeLaSemana() arma slots del día: primero busca HorarioLaboral (DB),
+// 3. horariosDeLaSemana() arma horarios del día: primero busca HorarioLaboral (DB),
 //    si no hay, usa horariosRespaldo (semilla)
 // 4. horariosLibresDelDia() resta ocupados + bloqueos + pasados de hoy → libres
 // 5. estadoDelTurno() decide estado lógico (Confirmado/Expirado/Completado...)
@@ -48,20 +48,20 @@ export const formatoFecha = (date) => {
 }
 
 // patronDelDia(date): le da a un día un nombre corto de horario.
-// Acepta martes..sábado (lun/mar/mie/jue/vie/sab) y devuelve NULL si es
+// Acepta martes..sábado (mar/mie/jue/vie/sab) y devuelve NULL si es
 // domingo o lunes (cerrado). Ese nombre se usa para unir con la tabla
 // HorarioLaboral de la DB.
 export const patronDelDia = (date) => {
   const weekday = date.getDay()
   if (esDiaCerrado(weekday)) return null
-  const mapping = { 1: 'lun', 2: 'mar', 3: 'mie', 4: 'jue', 5: 'vie', 6: 'sab' }
+  const mapping = { 2: 'mar', 3: 'mie', 4: 'jue', 5: 'vie', 6: 'sab' }
   return mapping[weekday] ?? null
 }
 
 // datosDelDia(fechaIso): junta las dos funciones de arriba.
 // Para una fecha de turno devuelve qué día del calendario es (idDia),
 // su etiqueta corta (etiquetaDia) y el día+mes (fechaDia).
-// Si cae en día cerrado, idDia queda 'dom' (domingo) como fallback.
+// Si cae en día cerrado, idDia queda 'dom' (domingo) como respaldo.
 export const datosDelDia = (fechaIso) => {
   const dateStr = String(fechaIso).trim().split('T')[0]
   const d = new Date(`${dateStr}T00:00:00`)
@@ -70,7 +70,7 @@ export const datosDelDia = (fechaIso) => {
   return { idDia: pat ?? 'dom', etiquetaDia: lbl.label, fechaDia: lbl.date }
 }
 
-// ── Slots y horarios laborales ────────────────────────
+// ── Horarios laborales ────────────────────────────────
 // MINUTOS_POR_SLOT: cada turno dura 30 minutos (el paso entre horarios).
 const MINUTOS_POR_SLOT = 30
 // DIAS_ATENCION: días que abre la barbería contados a la forma de JS
@@ -157,9 +157,9 @@ export const sePuedeCancelar = (booking) => {
 //   - Si no, 'Confirmado' (falta que ocurra).
 export const estadoDelTurno = (estado, fechaIso, hora) => {
   const e = String(estado ?? '')
-  if (e === 'Cancelado' || e === 'cancelled') return 'Cancelado'
-  if (e === 'Completado' || e === 'completed') return 'Completado'
-  if (e === 'NoSePresento' || e === 'no-show') return 'NoSePresento'
+  if (e === 'Cancelado') return 'Cancelado'
+  if (e === 'Completado') return 'Completado'
+  if (e === 'NoSePresento') return 'NoSePresento'
   const dateStr = String(fechaIso ?? '').split('T')[0]
   const yaPaso = dateStr && hora ? new Date(`${dateStr}T${hora}:00`) < new Date() : false
   return yaPaso ? 'Expirado' : 'Confirmado'

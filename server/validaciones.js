@@ -74,12 +74,6 @@ const errorHora = (valor) =>
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX_BYTES = 72;
 
-const passwordValida = (valor) => {
-    if (typeof valor !== "string" || !valor) return false;
-    if (valor.length < PASSWORD_MIN) return false;
-    return Buffer.byteLength(valor, "utf8") <= PASSWORD_MAX_BYTES;
-};
-
 const errorPassword = (valor) => {
     if (typeof valor !== "string" || !valor) return "Falta la contraseña.";
     if (valor.length < PASSWORD_MIN) return `La contraseña debe tener al menos ${PASSWORD_MIN} caracteres.`;
@@ -102,14 +96,12 @@ const esIdValido = (valor) => {
 // idProfesional inválido respondía 500 por una excepción, no por el dato malo.
 const errorId = (valor) => (esIdValido(valor) ? null : "El identificador no es válido.");
 
+// Solo se exportan los "error*": los booleanos (esFechaIsoValida, esHoraValida,
+// esIdValido) y las constantes (PASSWORD_MIN) se usan únicamente dentro de este
+// archivo; las rutas importan los mensajes listos.
 module.exports = {
-    esFechaIsoValida,
     errorFecha,
-    esHoraValida,
     errorHora,
-    PASSWORD_MIN,
-    passwordValida,
     errorPassword,
-    esIdValido,
     errorId,
 };

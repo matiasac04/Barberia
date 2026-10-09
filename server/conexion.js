@@ -34,7 +34,7 @@
 //   esperan a ESA MISMA promesa. Sin esto, `pool` queda undefined hasta que
 //   el await termina, y cada llamada concurrente se salta el caso 1 y se
 //   va a su propio sql.connect() → 6 conexiones y 5 fugas (Somee tiene
-//   pocos slots). Con esto: 1 conexión.
+//   pocas conexiones). Con esto: 1 conexión.
 //   OJO: esto NO reduce la latencia del primer request (medido: 2,6 s igual
 //   en ambos casos) — el costo está en abrir la conexión contra la nube.
 //
@@ -81,7 +81,7 @@ const POOL_PING_INTERVAL = 5000;
 // undefined hasta que el await termina, y cada llamada concurrente se saltaba
 // los dos casos de arriba y terminaba en su propio sql.connect().
 // Las conexiones perdedoras nunca se cerraban (Somee, al ser gratis, tiene
-// muy pocos slots y los sharing los apuran), así que además se fugaban
+// muy pocas conexiones y los que comparten las apuran), así que además se fugaban
 // conexiones en cada montaje. Antes: 6 conexiones en el primer arranque,
 // ahora: 1. OJO: esto NO reduce la latencia del primer request (medido: 2,6 s
 // igual en ambos casos) — el costo está en abrir la conexión contra la nube.
@@ -97,7 +97,7 @@ async function getPool() {
     }
 
     // 2) Hay que pingear o conectar. Si ya hay una conexión abriéndose, nos
-    //    enganchamos a esa (case 2 y 3 Shared). Si no, arrancamos el cycle.
+    //    enganchamos a esa (casos 2 y 3: compartidos). Si no, arrancamos el ciclo.
     if (!reconociendo) {
         reconociendo = (async () => {
             // 2a) Pasaron 5 segundos y ya teníamos pool → "¿seguís ahí?".
@@ -128,7 +128,7 @@ async function getPool() {
             return pool;
         })().finally(() => {
             // Libera el lock: el próximo pedido que necesite pool puede
-            // arrancar su propio cycle (y si este falló, puede reintentar).
+            // arrancar su propio ciclo (y si este falló, puede reintentar).
             reconociendo = null;
         });
     }

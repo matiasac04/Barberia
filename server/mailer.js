@@ -1,6 +1,23 @@
+// ═══════════════════════════════════════════════════════════════════
+// server/mailer.js — ENVÍO DE MAILS (confirmación de turno)
+// ═══════════════════════════════════════════════════════════════════
+// ¿CÓMO FUNCIONA?
+//
+// Módulo aislado que envía el mail de confirmación cuando un cliente reserva
+// un turno (lo llama POST /turnos en rutasTurnos.js). Usa nodemailer con una
+// cuenta de Gmail y una "App Password".
+//
+// El envío es "best effort": el llamador lo dispara DESPUÉS de responder al
+// cliente y con su propio catch, así que si Gmail falla (sin credenciales,
+// límite diario, caída) la reserva ya quedó confirmada en la base igual.
+//
+// Credenciales en server/.env: GMAIL_USER y GMAIL_APP_PASS (nunca en el repo).
+// ═══════════════════════════════════════════════════════════════════
 require("dotenv").config();
 const nodemailer = require("nodemailer");
 
+// transporter: la conexión SMTP de Gmail que reutiliza nodemailer. Se crea
+// una sola vez al cargar el módulo (no en cada mail).
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -9,6 +26,9 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// enviarMail({ para, asunto, html }): envía un mail por Gmail.
+// Falla rápido si faltan las credenciales, con un mensaje claro. El error
+// sube al llamador, que lo loguea sin romper la reserva ya confirmada.
 async function enviarMail({ para, asunto, html }) {
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASS) {
     throw new Error("Faltan GMAIL_USER / GMAIL_APP_PASS en el .env del server.");
@@ -21,6 +41,9 @@ async function enviarMail({ para, asunto, html }) {
   });
 }
 
+// formatearFecha('2026-10-24'): fecha legible en es-AR ("sábado, 24 de octubre
+// de 2026"). El 'T00:00:00' fuerza hora local y evita que el date se corra
+// un día por la zona horaria.
 function formatearFecha(fecha) {
   return new Intl.DateTimeFormat("es-AR", {
     weekday: "long",
@@ -30,6 +53,8 @@ function formatearFecha(fecha) {
   }).format(new Date(`${fecha}T00:00:00`));
 }
 
+// htmlConfirmacionTurno(...): arma el HTML del mail (tabla con servicio,
+// profesional, fecha, hora, duración y total formateado en ARS).
 function htmlConfirmacionTurno({ cliente, servicio, profesional, fecha, hora, precio, duracion }) {
   const fechaLegible = formatearFecha(fecha);
   const precioArs = Number(precio).toLocaleString("es-AR", {

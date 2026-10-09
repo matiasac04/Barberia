@@ -12,7 +12,7 @@
      3. Formularios e inputs          → compartidos por todas las pantallas
      4. Turnero del cliente            → Inicio.jsx (chips, pasos, resumen)
      5. Panel de administración       → Admin.jsx y sus 6 sub-paneles
-     6. Wizard móvil y "Cómo funciona" → el step-panel que colapsa en mobile
+     6. Asistente móvil y "Cómo funciona" → el step-panel que colapsa en mobile
      7. Animaciones, footer y responsive → keyframes y media queries finales
      8. Calendario, avatares y barberos→ Calendario.jsx
      9. WhatsApp flotante y Mis turnos → WhatsApp.jsx + reprogramación
@@ -49,7 +49,6 @@
 .auth-page::before { top: -200px; left: -180px; background: radial-gradient(circle, rgba(230, 178, 84, 0.18) 0%, rgba(230, 178, 84, 0) 68%); }
 .auth-page::after { right: -200px; bottom: -240px; background: radial-gradient(circle, rgba(239, 159, 95, 0.14) 0%, rgba(239, 159, 95, 0) 72%); }
 .simple-hero { max-width: 1120px; margin: 0 auto 20px; padding: 30px; border-radius: 32px; color: var(--text-hi); background: radial-gradient(700px 320px at 12% -10%, rgba(230, 178, 84, 0.1), transparent 60%), linear-gradient(160deg, rgba(32, 24, 14, 0.9) 0%, rgba(17, 12, 6, 0.92) 100%); border: 1px solid var(--line-strong); box-shadow: var(--shadow-pop); backdrop-filter: blur(14px); }
-.auth-hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr); gap: 22px; align-items: stretch; position: relative; z-index: 1; }
 .auth-shell { width: min(1040px, 100%); margin: 0; }
 .auth-copy { display: grid; align-content: start; gap: 10px; padding: 14px 8px 14px 4px; }
 .auth-copy .brand-mark { width: 54px; height: 54px; border-radius: 16px; margin-bottom: 10px; }
@@ -67,10 +66,9 @@
 .auth-card-head { display: grid; gap: 6px; padding-bottom: 4px; }
 .auth-card-head h2 { margin: 0; font-family: var(--font-display); font-size: 1.6rem; color: var(--text-hi); letter-spacing: -0.01em; }
 .auth-card-head p { margin: 0; color: var(--text-mid); line-height: 1.5; }
-.auth-hint { color: var(--gold-soft); font-size: 0.86rem; font-weight: 700; }
-.auth-submit, .auth-switch { min-height: 52px; width: 100%; border-radius: var(--radius-sm); border: none; font-weight: 700; cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease; }
-.auth-submit:hover, .auth-switch:hover { transform: translateY(-1px); }
-.auth-submit:active, .auth-switch:active { transform: translateY(1px); }
+.auth-submit { min-height: 52px; width: 100%; border-radius: var(--radius-sm); border: none; font-weight: 700; cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease; }
+.auth-submit:hover { transform: translateY(-1px); }
+.auth-submit:active { transform: translateY(1px); }
 .auth-submit.primary { background: var(--gold-gradient); color: #241a08; box-shadow: 0 18px 32px rgba(230, 178, 84, 0.24); }
 .auth-submit.primary:hover { box-shadow: 0 22px 38px rgba(230, 178, 84, 0.32); }
 .auth-submit.secondary { background: var(--card-soft); color: var(--text-hi); border: 1px solid var(--line); }
@@ -84,17 +82,15 @@
 .auth-fields { display: grid; gap: 10px; }
 .register-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .register-fields input:last-child { grid-column: 1 / -1; }
+.auth-toggle { justify-self: start; display: inline-flex; align-items: center; gap: 8px; color: var(--text-mid); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+.auth-toggle input { width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer; }
 /* ── Formularios e inputs ───────────────────────────── */
-.simple-form input, .calendar-input, .verification-input, .auth-fields input, .admin-form input, .admin-form select, .admin-select-group select, .admin-select-group input { width: 100%; min-height: 50px; padding: 0 16px; border-radius: var(--radius-sm); border: 1px solid var(--line-soft); background: rgba(13, 9, 5, 0.55); color: var(--text-hi); transition: border-color 160ms ease, box-shadow 160ms ease; }
-.simple-form input::placeholder, .calendar-input::placeholder, .verification-input::placeholder, .auth-fields input::placeholder, .admin-form input::placeholder { color: var(--text-low); }
-.simple-form input:hover, .calendar-input:hover, .verification-input:hover, .auth-fields input:hover, .admin-form input:hover, .admin-form select:hover, .admin-select-group select:hover, .admin-select-group input:hover { border-color: var(--line); }
-.simple-form input:focus, .calendar-input:focus, .verification-input:focus, .auth-fields input:focus, .admin-form input:focus, .admin-form select:focus, .admin-select-group select:focus, .admin-select-group input:focus { border-color: rgba(230, 178, 84, 0.75); box-shadow: 0 0 0 4px rgba(230, 178, 84, 0.12); }
+.simple-form input, .auth-fields input, .admin-form input, .admin-form select, .admin-select-group select, .admin-select-group input { width: 100%; min-height: 50px; padding: 0 16px; border-radius: var(--radius-sm); border: 1px solid var(--line-soft); background: rgba(13, 9, 5, 0.55); color: var(--text-hi); transition: border-color 160ms ease, box-shadow 160ms ease; }
+.simple-form input::placeholder, .auth-fields input::placeholder, .admin-form input::placeholder { color: var(--text-low); }
+.simple-form input:hover, .auth-fields input:hover, .admin-form input:hover, .admin-form select:hover, .admin-select-group select:hover, .admin-select-group input:hover { border-color: var(--line); }
+.simple-form input:focus, .auth-fields input:focus, .admin-form input:focus, .admin-form select:focus, .admin-select-group select:focus, .admin-select-group input:focus { border-color: rgba(230, 178, 84, 0.75); box-shadow: 0 0 0 4px rgba(230, 178, 84, 0.12); }
 .admin-form select, .admin-select-group select { appearance: none; padding-right: 42px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23e6b254' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; background-color: rgba(13, 9, 5, 0.55); }
 .admin-form select option, .admin-select-group select option { background: #1c140c; color: var(--text-hi); }
-.verification-box { display: grid; gap: 10px; padding: 18px; border-radius: var(--radius-md); background: var(--card-soft); border: 1px solid var(--line-soft); }
-.verification-box label { font-size: 0.92rem; font-weight: 700; color: var(--text-hi); }
-.verification-input { min-height: 58px; text-align: center; letter-spacing: 0.3em; font-size: 1.25rem; }
-.verification-hint { color: var(--text-low); line-height: 1.5; font-size: 0.9rem; }
 .simple-feedback { margin-top: 14px; padding: 13px 14px 13px 46px; border-radius: var(--radius-sm); position: relative; background: var(--card-soft); border: 1px solid var(--line-soft); color: var(--text-mid); line-height: 1.5; }
 .simple-feedback::before { content: 'i'; position: absolute; left: 15px; top: 50%; transform: translateY(-50%); width: 19px; height: 19px; display: grid; place-items: center; border-radius: 999px; font-size: 0.72rem; font-weight: 800; font-family: var(--font-body); background: rgba(255, 255, 255, 0.14); color: var(--text-low); }
 .simple-feedback.success { background: var(--ok-bg); border-color: rgba(127, 214, 162, 0.24); color: #c8f0d8; }
@@ -105,7 +101,7 @@
 /* Inicio.jsx. El patrón central de la app es el "chip": un botón redondeado
    que representa una opción (un servicio, un barbero, una hora) y cambia de
    aspecto según esté elegido (.selected) o no se pueda usar (.occupied /
-   disabled). Los .step-panel son los bloques del wizard de 5 pasos. */
+   disabled). Los .step-panel son los bloques del asistente de 5 pasos. */
 .simple-layout { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 16px; align-items: start; }
 .client-topbar { max-width: 1120px; margin: 0 auto 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .client-topbar h2, .simple-card h2, .simple-card h3 { font-family: var(--font-display); letter-spacing: -0.01em; }
@@ -139,7 +135,6 @@
 .calendar-hint { margin-top: 8px; color: var(--text-low); line-height: 1.45; font-size: 0.9rem; }
 .slots-empty { padding: 14px 16px; border-radius: var(--radius-sm); background: rgba(230, 178, 84, 0.08); border: 1px dashed var(--line); color: var(--text-mid); line-height: 1.5; font-size: 0.92rem; }
 .hours-hint { margin-top: 8px; color: var(--text-low); line-height: 1.45; font-size: 0.86rem; }
-.calendar-input::-webkit-calendar-picker-indicator { filter: invert(0.85) sepia(1) saturate(3) hue-rotate(-10deg); cursor: pointer; opacity: 0.8; }
 .chip-grid { display: grid; gap: 10px; }
 .hours-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -206,19 +201,14 @@
 .admin-row:hover { border-color: var(--line); background: var(--card-strong); }
 .admin-row-inactivo { opacity: 0.6; }
 .admin-row-inactivo:hover { opacity: 0.9; }
-.admin-badge-activo, .admin-badge-inactivo { margin-top: 6px; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; width: max-content; }
-.admin-badge-activo { color: #166534; background: #dcfce7; }
-.admin-badge-inactivo { color: #78350f; background: #fef3c7; }
 .admin-inactive-block { margin-top: 14px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
 .admin-inactive-block summary { cursor: pointer; font-weight: 700; color: var(--text-hi); margin-bottom: 10px; }
 .admin-inactive-block .admin-list { margin-top: 10px; }
 .admin-empty { color: var(--text-low); padding: 12px 0; }
-.admin-date-nav { display: flex; gap: 6px; align-items: center; }
 .admin-day-off { margin: 12px 0; padding: 12px; border: 1px dashed var(--line-soft); border-radius: 10px; background: var(--card-bg, #fff); }
 .admin-day-off p { margin: 0 0 8px; color: var(--text-hi); font-weight: 600; }
 .admin-row strong, .admin-row span { display: block; }
 .admin-row-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
-.admin-phone { font-weight: 700; color: var(--text-hi); }
 .admin-row-actions .auth-submit { min-height: 40px; width: auto; padding: 0 14px; font-size: 0.9rem; }
 .admin-schedule-toolbar { align-items: end; }
 .admin-select-group { display: grid; gap: 8px; }
@@ -245,7 +235,7 @@
 .weekly-off-badge { width: fit-content; padding: 2px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #78350f; background: #fef3c7; }
 .admin-booking-row { align-items: flex-start; }
 .booking-status { display: inline-flex; width: fit-content; margin-top: 8px; padding: 6px 12px; border-radius: 999px; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid transparent; }
-.status-pending, .status-confirmed { background: rgba(230, 178, 84, 0.12); color: var(--gold-soft); border-color: rgba(230, 178, 84, 0.22); }
+.status-confirmed { background: rgba(230, 178, 84, 0.12); color: var(--gold-soft); border-color: rgba(230, 178, 84, 0.22); }
 .status-completed { background: var(--ok-bg); color: var(--ok); border-color: rgba(127, 214, 162, 0.22); }
 .status-no-show { background: var(--err-bg); color: var(--err); border-color: rgba(241, 153, 155, 0.22); }
 .status-cancelled { background: rgba(255, 255, 255, 0.04); color: var(--text-low); border-color: var(--line-soft); }
@@ -254,12 +244,8 @@
 .admin-agenda-list { display: grid; gap: 16px; }
 .admin-agenda-day { display: grid; gap: 12px; padding: 16px; border-radius: var(--radius-md); background: var(--card-soft); border: 1px solid var(--line-soft); }
 .admin-agenda-day .simple-section-head h3 { font-family: var(--font-display); color: var(--gold-soft); }
-.admin-agenda-filter { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; padding: 12px 16px; border-radius: var(--radius-md); background: var(--card-soft); border: 1px solid var(--line-soft); }
-.admin-agenda-filter label { color: var(--text-mid); font-size: 0.85rem; font-weight: 700; }
-.admin-agenda-filter select { flex: 0 1 260px; }
-.admin-agenda-count { margin-left: auto; font-size: 0.85rem; color: var(--text-low); font-weight: 700; }
-/* ── Wizard móvil y bloque Cómo funciona ───────────── */
-/* En desktop el wizard muestra los 5 pasos a la vez; en mobile solo el
+/* ── Asistente móvil y bloque Cómo funciona ────────── */
+/* En desktop el asistente muestra los 5 pasos a la vez; en mobile solo el
    activo (is-active). Estas reglas hacen esa transición con una animación.
    El bloque .info-body es el "Cómo funciona" plegable del turnero. */
 .info-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -281,7 +267,6 @@
   .simple-layout { grid-template-columns: 1fr; }
   .bookings-layout { grid-template-columns: 1fr; }
   .client-topbar { flex-direction: column; align-items: stretch; }
-  .auth-hero { grid-template-columns: 1fr; }
   .auth-shell { width: 100%; }
   .hours-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .register-fields { grid-template-columns: 1fr; }

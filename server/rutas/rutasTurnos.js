@@ -24,7 +24,7 @@
 //
 // EL "HUECO" DE UN TURNO:
 // La consulta de disponibilidad filtra por `estado IS NULL OR estado <> 'Cancelado'`.
-// O sea: un turno cancelado NO ocupa el horario. Cancelar es LIBERAR el slot,
+// O sea: un turno cancelado NO ocupa el horario. Cancelar es LIBERAR el horario,
 // así que otro cliente puede reservarlo de nuevo.
 //
 // LA ZONA HORARIA (el detalle que más bugs causa):
@@ -104,7 +104,7 @@ const horarioYaPaso = (fechaIso, horaInicio) => {
   return inicio.getTime() <= Date.now();
 };
 
-// ── Normalización y slots atendibles ──────────────────
+// ── Normalización y horarios atendibles ───────────────
 // normalizarHora(valor): deja cualquier hora en 'HH:MM' o devuelve '' si no es
 // una hora válida. La usan las validaciones y el INSERT, para que en la base
 // quede siempre el mismo formato y las comparaciones de ocupación no dependan
@@ -123,7 +123,7 @@ const SLOTS_POR_DIA = 30;
 // duplicados acá a propósito: el servidor NO puede importar el módulo del
 // frontend, y si validara contra un horario vacío dejaría de poderse reservar
 // con todo profesional que el admin todavía no configuró (el turnero sí le
-// mostraría esos slots → la UI y la API quedarían desincronizadas).
+// mostraría esos horarios → la UI y la API quedarían desincronizadas).
 const SLOTS_FALLBACK = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '15:00', '15:30', '16:00', '16:30', '17:00'];
 
 // aMinutos('09:30') -> 570 (minutos desde las 00:00).
@@ -136,7 +136,7 @@ const desdeMinutos = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:
 
 // slotsAtendiblesDelDia(db, idProfesional, diaSemana): los horarios que el
 // profesional realmente atiende ese día.
-//   - Si tiene filas en HorarioLaboral → genera los slots de 30' de cada bloque.
+//   - Si tiene filas en HorarioLaboral → genera los horarios de 30' de cada bloque.
 //   - Si NO tiene ninguna → devuelve SLOTS_FALLBACK (mismo criterio que
 //     horariosDeLaSemana del frontend).
 // OJO: horaEntrada/horaSalida vienen CONVERTidas a varchar, porque en crudo son
@@ -207,7 +207,7 @@ const avisarReservaPorMail = async (db, { idCliente, idProfesional, idServicio, 
 // ── Disponibilidad (turnos libres/ocupados) ───────────
 // GET /turnos/disponibles?fecha=&idProfesional=
 // Devuelve QUÉ horas están ocupadas, no las libres: el frontend las resta
-// de los slots del día (ver availableSlots en App.jsx). Así la lógica de
+// de los horarios del día (ver availableSlots en App.jsx). Así la lógica de
 // "libres" está en un solo lado (el frontend), no partida en dos.
 router.get("/turnos/disponibles", jwtMiddleware, async (req, res) => {
   const { fecha, idProfesional } = req.query;
@@ -235,7 +235,7 @@ router.get("/turnos/disponibles", jwtMiddleware, async (req, res) => {
 
 // GET /turnos/ocupados?inicio=&fin=
 // Trae TODOS los turnos de un rango de fechas. Es lo que usa el calendario
-// mensual para pintar cuántos slots hay libres por día, sin pedir una
+// mensual para pintar cuántos horarios hay libres por día, sin pedir una
 // consulta por cada día (serían 30 requests en vez de 1).
 router.get("/turnos/ocupados", jwtMiddleware, async (req, res) => {
   const { inicio, fin } = req.query;
@@ -245,12 +245,12 @@ router.get("/turnos/ocupados", jwtMiddleware, async (req, res) => {
   const errFin = errorFecha(fin);
   if (errFin) return res.status(400).json({ error: `Parámetro "fin": ${errFin}` });
   // Un rango al revés traería 0 filas y la app dibujaría el mes entero como
-  // libre, que es peor que un error: el cliente elige un slot ya tomado.
+  // libre, que es peor que un error: el cliente elige un horario ya tomado.
   if (inicio > fin) {
     return res.status(400).json({ error: 'El rango de fechas está invertido: "inicio" tiene que ser anterior a "fin".' });
   }
   // Y un rango acotado. Sin esto, un cliente puede pedir del año 1900 al 2999 y
-  // dumpingar la agenda histórica entera en una sola respuesta.
+  // volcar la agenda histórica entera en una sola respuesta.
   const dias = (new Date(`${fin}T00:00:00`) - new Date(`${inicio}T00:00:00`)) / 86400000;
   if (dias > 93) {
     return res.status(400).json({ error: "El rango es demasiado grande (máximo 3 meses)." });
@@ -311,7 +311,7 @@ router.get("/turnos", jwtMiddleware, requireAdmin, async (req, res) => {
 // el cliente no puede inventarse el importe.
 //
 // POR QUÉ LAS VALIDACIONES 5, 6 Y 7 ESTÁN ACÁ Y NO SOLO EN EL FRONTEND:
-// el turnero ya esconde los slots bloqueados y los que están fuera de horario,
+// el turnero ya esconde los horarios bloqueados y los que están fuera de horario,
 // pero eso es solo UI: cualquiera puede llamar a la API a mano y meter un turno
 // en un horario que el admin bloqueó, fuera del horario del profesional, o con
 // un profesional dado de baja. La regla se tiene que cumplir en el servidor.
@@ -324,7 +324,7 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
 
   // La hora se normaliza una sola vez y se usa para TODO lo de abajo (validar
   // horario, chequear bloqueo, insertar): así no puede colarse un '9:0' que
-  // en la base quedaría distinto de los slots que compara la disponibilidad.
+  // en la base quedaría distinto de los horarios que compara la disponibilidad.
   const hora = normalizarHora(horaInicio);
   if (!hora) {
     return res.status(400).json({ error: "El horario no tiene un formato válido (se espera HH:MM)." });
@@ -399,7 +399,7 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
 
     // ── Chequeo de ocupación + INSERT, EN UNA TRANSACCIÓN SERIALIZABLE ──
     // Antes eran dos consultas sueltas y eso era una carrera: si dos clientes
-    // confirmaban el mismo slot en el mismo instante, los dos leían "libre" y
+    // confirmaban el mismo horario en el mismo instante, los dos leían "libre" y
     // los dos insertaban (doble reserva). Con SERIALIZABLE el segundo SELECT
     // espera el lock del primero y al releer ya ve el turno nuevo, así que
     // solo uno pasa y el otro recibe el 409 de abajo.
@@ -459,7 +459,7 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
 
 // ── Cancelar, editar y eliminar turnos ────────────────
 // PATCH /turnos/:id/cancelar — baja LÓGICA: NO borra la fila, solo pone
-// estado = 'Cancelado'. Así el turno queda en el historial pero libera el slot.
+// estado = 'Cancelado'. Así el turno queda en el historial pero libera el horario.
 // El admin puede cancelar cualquier turno; el cliente solo el suyo y con >24 h.
 router.patch("/turnos/:id/cancelar", jwtMiddleware, async (req, res) => {
   try {
@@ -531,7 +531,7 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     // estado en inglés y lo traducía con un mapa acá; ahora el frontend usa
     // directo los valores de la DB (español), así que se valida contra ellos.
     // Un estado inventado cuenta como "NO cancelado" en los cinco filtros
-    // `estado <> 'Cancelado'`: el slot quedaría bloqueado para siempre sin
+    // `estado <> 'Cancelado'`: el horario quedaría bloqueado para siempre sin
     // que nada lo explicara.
     if (estado !== undefined) {
       const estadosValidos = ['Confirmado', 'Completado', 'NoSePresento', 'Cancelado'];

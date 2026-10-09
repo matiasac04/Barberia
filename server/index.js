@@ -48,7 +48,7 @@ const app = express();
 //
 // Sin esto, Express ve TODAS las requests como si vinieran de la IP interna
 // del servidor, así que los dos rate limiters de abajo cuentan para toda la
-// app junta. En local no molesta (todo viene de 127.0.0.1) pero en Belmo el
+// app junta. En local no molesta (todo viene de 127.0.0.1) pero en Vercel el
 // tráfico pasa por el proxy del hosting: las 20 cuentas de /login y las 300
 // requests globales serían UN SOLO cubo compartido. Con dos personas usando la
 // app al mismo tiempo, el tercero que entra recibe 429 y no puede iniciar
