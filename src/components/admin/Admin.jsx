@@ -133,12 +133,6 @@ function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueo
         <div><h2>Panel de administración</h2><p>Controlá la operación de la barbería.{currentUser ? ` Sesión activa: ${currentUser.email}.` : ''}</p></div>
         <button type="button" className="client-logout" onClick={onCerrarSesion}>Cerrar sesión</button>
       </section>
-      <section className="simple-card admin-summary">
-        <div><strong>{profesionales.length}</strong><span>Profesionales</span></div>
-        <div><strong>{servicios.length}</strong><span>Servicios</span></div>
-        <div><strong>{conteoEstados.Confirmado}</strong><span>Turnos activos</span></div>
-        <div><strong>{conteoEstados.Completado + conteoEstados.NoSePresento}</strong><span>Histórico</span></div>
-      </section>
       {/* El panel se dibuja siempre (si no, el admin no podría ni crear el
           primer servicio), así que el aviso de carga fallida va arriba: sin
           esto, un backend caído se veía como un panel vacío pero "funcionando". */}
