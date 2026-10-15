@@ -64,7 +64,7 @@ function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta
           <form className="auth-card" onSubmit={iniciarSesion}>
             <div className="auth-card-head"><div><h2>Entrá a tu cuenta</h2></div><p>Reservá y administrá tus turnos desde una sola pantalla.</p></div>
             <div className="auth-fields">
-              <input type="text" placeholder="Usuario o mail" value={correoIngreso} onChange={(e) => setCorreoIngreso(e.target.value)} />
+              <input type="text" placeholder="Mail" value={correoIngreso} onChange={(e) => setCorreoIngreso(e.target.value)} />
               <input type={verClave ? 'text' : 'password'} placeholder="Contraseña" value={claveIngreso} onChange={(e) => setClaveIngreso(e.target.value)} />
             </div>
             <label className="auth-toggle">

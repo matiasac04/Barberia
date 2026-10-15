@@ -130,7 +130,7 @@ function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueo
     <main className="simple-page admin-page">
       <Cabecera subtitle="Panel administrativo" />
       <section className="simple-card client-topbar admin-topbar">
-        <div><h2>Panel de administración</h2><p>Controlá la operación de la barbería.{currentUser ? ` Sesión activa: ${currentUser.email}.` : ''}</p></div>
+        <div><h2>Panel de administración</h2><p>Controlá la operación de la barbería.{currentUser ? ` Sesión activa: ${currentUser.usuario}.` : ''}</p></div>
         <button type="button" className="client-logout" onClick={onCerrarSesion}>Cerrar sesión</button>
       </section>
       {/* El panel se dibuja siempre (si no, el admin no podría ni crear el

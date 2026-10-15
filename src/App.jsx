@@ -418,7 +418,7 @@ return () => { cancelado = true; };
       setAvisoAcceso({ type: 'idle', message: 'Iniciando sesión...' });
       const r = await loginCliente(cred, pass);
       if (r?.role === 'admin') {
-        const admin = { idCliente: null, idAdmin: r.admin?.idAdmin ?? null, name: r.admin?.nombre ?? 'Administrador', email: r.admin?.email ?? cred, role: 'admin' };
+        const admin = { idCliente: null, idAdmin: r.admin?.idAdmin ?? null, name: r.admin?.nombre ?? 'Administrador', email: r.admin?.email ?? cred, role: 'admin', usuario:r.admin?.usuario ?? '' };
         setToken(r.token); setCurrentUser(admin);
         try { localStorage.setItem('token', r.token); localStorage.setItem('currentUser', JSON.stringify(admin)); } catch {}
         setVista('admin'); setAvisoAcceso({ type: 'success', message: 'Acceso de administrador habilitado.' });
