@@ -113,7 +113,6 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
             <span className="step-progress-label">Paso {pasoActual} de 5</span>
             <span className="step-progress-bar"><i style={{ width: `${(pasoActual / 5) * 100}%` }} /></span>
           </div>
-          {aviso.type !== 'success' && <div className={`simple-feedback ${aviso.type}`}>{aviso.message}</div>}
           <div className={`simple-group step-panel${pasoActual === 1 ? ' is-active' : ''}`} data-step="1">
             <div className="step-label"><span className="step-badge">1</span><label>Elegí el servicio</label></div>
             <div className="chip-grid service-grid">
@@ -169,10 +168,10 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
               <input type="text" placeholder="Nombre y apellido" value={nombreCliente} onChange={(e) => setNombreCliente(e.target.value)} />
               <input type="tel" placeholder="Celular (ej. 11 5555-1234)" value={telefonoCliente} onChange={(e) => setTelefonoCliente(e.target.value)} />
               <button className="simple-submit" type="submit" disabled={enviando}>{enviando ? 'Confirmando...' : 'Confirmar turno'}</button>
-              {aviso.type === 'success' && <div className={`simple-feedback ${aviso.type}`}>{aviso.message}</div>}
             </form>
             <BarraPasos onPrev={() => irAlPaso(4)} />
           </div>
+          <div className={`simple-feedback ${aviso.type}`}>{aviso.message}</div>
         </article>
         <article className="simple-card">
           <div className="simple-section-head">
