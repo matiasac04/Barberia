@@ -14,9 +14,9 @@
 //   GET    /turnos/ocupados        → L280
 //   GET    /turnos                 → L322
 //   POST   /turnos                 → L370
-//   PATCH  /turnos/:id/cancelar    → L542
-//   PATCH  /turnos/:id             → L603
-//   DELETE /turnos/:id             → L739
+//   PATCH  /turnos/:id/cancelar    → L545
+//   PATCH  /turnos/:id             → L606
+//   DELETE /turnos/:id             → L752
 // ═══════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════
 // server/rutas/rutasTurnos.js — TODA LA LÓGICA DE RESERVAS
@@ -25,7 +25,7 @@
 //
 // Es el archivo más importante del backend: maneja la disponibilidad, la
 // reserva, la cancelación, la reprogramación y el borrado de turnos.
-// Define 6 endpoints:
+// Define 7 endpoints:
 //
 //   GET    /turnos/disponibles     → qué horas están ocupadas (fecha+profesional)
 //   GET    /turnos/ocupados        → todos los ocupados de un rango (calendario)
@@ -238,7 +238,7 @@ const avisarReservaPorMail = async (db, { idCliente, idProfesional, idServicio, 
 // ── Disponibilidad (turnos libres/ocupados) ───────────
 // GET /turnos/disponibles?fecha=&idProfesional=
 // Devuelve QUÉ horas están ocupadas, no las libres: el frontend las resta
-// de los horarios del día (ver availableSlots en App.jsx). Así la lógica de
+// de los horarios del día (ver cargarDisponibilidad en App.jsx). Así la lógica de
 // "libres" está en un solo lado (el frontend), no partida en dos.
 // GET /turnos/disponibles - devuelve solo los HORARIOS OCUPADOS (no libres).
 // El frontend resta esos horarios de los slots del día para pintar lo libre.
@@ -393,10 +393,13 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
   // 4) Validar fecha y obtener día de la semana ANTES de comparaciones.
   // Se valida la fecha ANTES de sacar el día de la semana: getDay() de una fecha
   // inválida devuelve NaN y las comparaciones de abajo no fallarían solas.
-  const fechaObj = new Date(`${fecha}T00:00:00`);
-  if (Number.isNaN(fechaObj.getTime())) {
-    return res.status(400).json({ error: "La fecha indicada no es válida." });
+  // errorFecha exige AAAA-MM-DD y rechaza días inexistentes (ej. 2026-02-31),
+  // que new Date() normalizaría en silencio al mes siguiente.
+  const errFecha = errorFecha(fecha);
+  if (errFecha) {
+    return res.status(400).json({ error: errFecha });
   }
+  const fechaObj = new Date(`${fecha}T00:00:00`);
   const diaNum = fechaObj.getDay();
   // Ventana de reservas: hoy hasta +30 días (incluido).
   const hoyInicio = new Date(); hoyInicio.setHours(0, 0, 0, 0);
@@ -632,13 +635,24 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       return res.status(400).json({ error: "No se puede reprogramar con menos de 24 horas de antelación. Contactanos al local." });
     }
 
+    // Si viene hora nueva, validar el formato antes de tocar la base (también
+    // para el admin: evita guardar un valor que después no matchee nunca).
+    if (horaInicio !== undefined && !normalizarHora(horaInicio)) {
+      return res.status(400).json({ error: "El horario no tiene un formato válido (se espera HH:MM)." });
+    }
+
     // Si viene fecha nueva, revalidar como en reserva (cerrado/domingo+luna y ventana).
     if (fecha !== undefined) {
+      // errorFecha rechaza formatos raros y días inexistentes (ej. 2026-02-31).
+      const errFecha = errorFecha(fecha);
+      if (errFecha) {
+        return res.status(400).json({ error: errFecha });
+      }
       const fechaObj = new Date(`${fecha}T00:00:00`);
       const diaNum = fechaObj.getDay();
       const hoyInicio = new Date(); hoyInicio.setHours(0, 0, 0, 0);
       const hoyFin = new Date(hoyInicio); hoyFin.setDate(hoyFin.getDate() + 30); hoyFin.setHours(23, 59, 59, 999);
-      if (Number.isNaN(fechaObj.getTime()) || diaNum === 0 || diaNum === 1) {
+      if (diaNum === 0 || diaNum === 1) {
         return res.status(400).json({ error: "La fecha elegida es domingo o lunes: la barbería está cerrada." });
       }
       if (fechaObj < hoyInicio || fechaObj > hoyFin) {
@@ -656,7 +670,6 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     // Revalidar horarios/bloqueos/horarios pasados solo si cliente mueve fecha/hora/profesional.
     // Si solo cambia teléfono/nombre no revalida (turno ya existe).
     if (req.user.role !== 'admin' && (fecha !== undefined || horaInicio !== undefined || idProfesional !== undefined)) {
-      if (!horaFinal) return res.status(400).json({ error: "El horario no tiene un formato válido (se espera HH:MM)." });
       // No permitir mover a horario ya pasado.
       if (horarioYaPaso(fechaFinal, horaFinal)) {
         return res.status(400).json({ error: "Ese horario ya pasó. Elegí uno más adelante." });

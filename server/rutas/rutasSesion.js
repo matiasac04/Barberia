@@ -37,9 +37,9 @@
 //   POST   /login                → L187  (público, Basic Auth base64 user:pass)
 //   GET    /verificar            → L322  (jwt)
 //   POST   /recuperar            → L335  (público, manda link por mail)
-//   POST   /restablecer          → L396  (público, token de un solo uso)
+//   POST   /restablecer          → L398  (público, token de un solo uso)
 // ═══════════════════════════════════════════════════════════════════
-// `router` is the contenedor de Express donde se definen las tres rutas de
+// `router` es el contenedor de Express donde se definen las cinco rutas de
 // este archivo; `jwt` firma y verifica tokens; `bcrypt` hashea y compara
 // contraseñas (acá nunca se guarda ni se compara una contraseña en texto plano
 // sin pasar por él).

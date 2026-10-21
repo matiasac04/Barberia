@@ -3,31 +3,32 @@
 // ═══════════════════════════════════════════════════════════════════
 //   API_URL                   → L60
 //   peticion()                → L75
-//   registrarCliente()        → L118
-//   loginCliente()            → L122
-//   verificarToken()          → L125
-//   solicitarRecuperacion()   → L128
-//   restablecerPassword()     → L130
-//   obtenerProfesionales()    → L136
-//   crearProfesional()        → L138
-//   actualizarProfesional()   → L139
-//   eliminarProfesional()     → L140
-//   obtenerServicios()        → L144
-//   crearServicio()           → L145
-//   actualizarServicio()      → L146
-//   eliminarServicio()        → L147
-//   obtenerTurnosCliente()    → L151
-//   obtenerTurnos()           → L153
-//   obtenerTurnosDisponibles()-> L155
-//   obtenerTurnosOcupados()   → L158
-//   reservarTurno()           → L162
-//   cancelarTurno()           → L165
-//   actualizarTurno()         → L168
-//   eliminarTurno()           → L171
-//   obtenerBloqueos()         → L177
-//   obtenerHorarios()         → L179
-//   guardarBloqueos()         → L181
-//   guardarHorarios()         → L183
+//   base64Utf8()              → L119
+//   registrarCliente()        → L127
+//   loginCliente()            → L131
+//   verificarToken()          → L134
+//   solicitarRecuperacion()   → L137
+//   restablecerPassword()     → L139
+//   obtenerProfesionales()    → L145
+//   crearProfesional()        → L147
+//   actualizarProfesional()   → L148
+//   eliminarProfesional()     → L149
+//   obtenerServicios()        → L153
+//   crearServicio()           → L154
+//   actualizarServicio()      → L155
+//   eliminarServicio()        → L156
+//   obtenerTurnosCliente()    → L160
+//   obtenerTurnos()           → L162
+//   obtenerTurnosDisponibles()-> L164
+//   obtenerTurnosOcupados()   → L167
+//   reservarTurno()           → L171
+//   cancelarTurno()           → L174
+//   actualizarTurno()         → L177
+//   eliminarTurno()           → L180
+//   obtenerBloqueos()         → L186
+//   obtenerHorarios()         → L188
+//   guardarBloqueos()         → L190
+//   guardarHorarios()         → L192
 // ═══════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════
@@ -113,13 +114,22 @@ const peticion = async (path, { method = "GET", token, body, headers = {} } = {}
   return data;
 };
 
+// base64Utf8: btoa() solo acepta Latin-1, así que una contraseña con ñ, acentos
+// o emoji lanzaba InvalidCharacterError y no dejaba iniciar sesión. Se codifica
+// primero a UTF-8 byte por byte (el backend decodifica con Buffer en utf-8).
+const base64Utf8 = (texto) => {
+  let binario = '';
+  for (const byte of new TextEncoder().encode(texto)) binario += String.fromCharCode(byte);
+  return btoa(binario);
+};
+
 // ── Autenticación ─────────────────────────────────────
 // registrarCliente: alta de cuenta nueva como cliente (sin token).
 export const registrarCliente = (datos) => peticion("/registro", { method: "POST", body: datos });
 // loginCliente: entra con mail+password. La contraseña viaja como
 // "Basic Auth" (usuario:password codificado en base64) porque el server
 // la usa para identificar si es un admin o un cliente.
-export const loginCliente = (email, password) => peticion("/login", { method: "POST", headers: { Authorization: `Basic ${btoa(`${email}:${password}`)}` } });
+export const loginCliente = (email, password) => peticion("/login", { method: "POST", headers: { Authorization: `Basic ${base64Utf8(`${email}:${password}`)}` } });
 // verificarToken: pregunta al server si el token JWT sigue siendo válido
 // (se usa al abrir la app para saber si el usuario sigue logueado).
 export const verificarToken = (token) => peticion("/verificar", { token });

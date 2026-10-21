@@ -1,11 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════
 // ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
 // ═══════════════════════════════════════════════════════════════════
-//   IniciarSesion() / banderas         → L42
-//   títulos / verClave / render        → L48/58/59
-//   Formulario registro                → L86
-//   Formulario recuperar / restablecer → L107/119
-//   Formulario login                   → L133
+//   IniciarSesion() / banderas         → L41
+//   títulos / verClave / render        → L47/57/68
+//   Formulario registro                → L94
+//   Formulario recuperar / restablecer → L114/126
+//   Formulario login                   → L140
 // ═══════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════
 // PANTALLA DE INICIO DE SESIÓN / REGISTRO / RECUPERACIÓN
@@ -25,9 +25,8 @@
 // en App.jsx. La pantalla 'restablecer' se abre sola cuando la URL trae
 // ?reset=<token> (el link que llega por mail).
 //
-// ingresarConGoogle es un MOCK (no hay OAuth real): crea un usuario falso
-// con token 'mock-google'. Ese usuario NO puede reservar (App.jsx valida
-// idCliente antes de POST /turnos), sirve solo para probar la UI.
+// ingresarConGoogle es un MOCK (no hay OAuth real): no crea sesión ni token,
+// solo muestra un aviso de que el acceso todavía no está habilitado.
 //
 // avisoAcceso muestra mensajes de éxito/error del proceso (vienen de App.jsx).
 // Todos los handlers y valores vienen por props desde App.jsx.
@@ -56,6 +55,15 @@ function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta
   // verClave: alterna el tipo del input de contraseña (password ↔ text)
   // para la función "Mostrar contraseña".
   const [verClave, setVerClave] = useState(false);
+
+  // Bloque de aviso reutilizado por las 4 pantallas. role="alert" +
+  // aria-live="assertive" hacen que el lector de pantalla lo anuncie apenas
+  // cambia, sin que el usuario tenga que buscarlo.
+  const aviso = (
+    <div className={`simple-feedback ${avisoAcceso.type}`} role="alert" aria-live="assertive">
+      {avisoAcceso.message}
+    </div>
+  );
   // ── Render de ingreso o registro ────────────────────
   return (
     <main className="simple-page auth-page">
@@ -85,6 +93,7 @@ function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta
         {esRegistro ? (
           <form className="auth-card" onSubmit={crearCuenta}>
             <div className="auth-card-head"><div><h2>Crear cuenta</h2></div><p>Te pedimos los datos justos para dejar tu perfil listo.</p></div>
+            {aviso}
             <div className="auth-fields register-fields">
               {/* Cada input actualiza un campo del objeto formularioRegistro
                   con spread (...p) para no pisar los demás campos. */}
@@ -99,25 +108,24 @@ function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta
             <button className="auth-submit primary" type="submit">Crear cuenta</button>
             {/* type="button" evita que actúe como submit; vuelve al login. */}
             <button className="auth-submit secondary" type="button" onClick={onMostrarIngreso}>Volver atrás</button>
-            {/* Mensaje de éxito/error del registro (viene de App.jsx). */}
-            <div className={`simple-feedback ${avisoAcceso.type}`}>{avisoAcceso.message}</div>
           </form>
         ) : esRecuperar ? (
           // Formulario de RECUPERACIÓN: pide el mail y dispara POST /recuperar.
           <form className="auth-card" onSubmit={pedirRecuperacion}>
             <div className="auth-card-head"><div><h2>¿Olvidaste tu contraseña?</h2></div><p>Escribí el mail de tu cuenta y te enviamos un link para elegir una nueva.</p></div>
+            {aviso}
             <div className="auth-fields">
               <input type="email" placeholder="Mail" value={correoRecuperacion} onChange={(e) => setCorreoRecuperacion(e.target.value)} />
             </div>
             <button className="auth-submit primary" type="submit">Enviar link</button>
             <button className="auth-submit secondary" type="button" onClick={onMostrarIngreso}>Volver al login</button>
-            <div className={`simple-feedback ${avisoAcceso.type}`}>{avisoAcceso.message}</div>
           </form>
         ) : esRestablecer ? (
           // Formulario de NUEVA CONTRASEÑA: se llega desde el link del mail
           // (?reset=<token>). El token lo guarda App.jsx y viaja en cambiarClave.
           <form className="auth-card" onSubmit={cambiarClave}>
             <div className="auth-card-head"><div><h2>Nueva contraseña</h2></div><p>Elegí una clave de al menos 8 caracteres para tu cuenta.</p></div>
+            {aviso}
             <div className="auth-fields">
               <input type={verClave ? 'text' : 'password'} placeholder="Nueva contraseña (mínimo 8 caracteres)" minLength={8} maxLength={72} value={claveNueva} onChange={(e) => setClaveNueva(e.target.value)} />
             </div>
@@ -127,13 +135,13 @@ function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta
             </label>
             <button className="auth-submit primary" type="submit">Guardar contraseña</button>
             <button className="auth-submit secondary" type="button" onClick={onMostrarIngreso}>Volver al login</button>
-            <div className={`simple-feedback ${avisoAcceso.type}`}>{avisoAcceso.message}</div>
           </form>
         ) : (
           <form className="auth-card" onSubmit={iniciarSesion}>
             {/* Formulario de LOGIN: mail + contraseña → iniciarSesion
                 (App.jsx hace POST /login con Basic Auth y guarda el token). */}
             <div className="auth-card-head"><div><h2>Entrá a tu cuenta</h2></div><p>Reservá y administrá tus turnos desde una sola pantalla.</p></div>
+            {aviso}
             <div className="auth-fields">
               <input type="text" placeholder="Mail" value={correoIngreso} onChange={(e) => setCorreoIngreso(e.target.value)} />
               {/* type cambia según verClave: 'password' oculta, 'text' muestra. */}
@@ -149,8 +157,8 @@ function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta
             <button className="auth-submit primary" type="submit">Iniciar sesión</button>
             <button className="auth-submit secondary" type="button" onClick={onMostrarRegistro}>Registrarme</button>
             <span className="auth-divider">o</span>
-            {/* Botón de Google (MOCK): no usa OAuth real; crea un usuario
-                falso con token 'mock-google' que no puede reservar turnos. */}
+            {/* Botón de Google (MOCK): no usa OAuth real; solo avisa que el
+                acceso todavía no está habilitado. */}
             <button className="auth-submit google" type="button" onClick={ingresarConGoogle}>
               {/* Logo de Google en SVG (decorativo, aria-hidden). */}
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -161,8 +169,6 @@ function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta
               </svg>
               Continuar con Google
             </button>
-            {/* Mensaje de éxito/error del login (viene de App.jsx). */}
-            <div className={`simple-feedback ${avisoAcceso.type}`}>{avisoAcceso.message}</div>
           </form>
         )}
       </section>

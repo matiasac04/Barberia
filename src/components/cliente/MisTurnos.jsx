@@ -103,7 +103,7 @@ function MisTurnos({ calendarMax, calendarMin, sePuedeCancelar, currentUser, blo
                           </div>
                         ) : <p className="slots-empty">No quedan horarios libres para este profesional ese día. Probá otra fecha.</p>}
                         {/* Confirmar: deshabilitado si no hay hora elegida o
-                            si la fecha+hora son idéntas al turno actual (no
+                            si la fecha+hora son idénticas al turno actual (no
                             tendría sentido reprogramar al mismo slot). */}
                         <button className="simple-submit reschedule-save" type="button" disabled={!horaReprogramar || (fechaReprogramar === b.fecha && horaReprogramar === b.hora)} onClick={() => { onReprogramarTurno(b.id, fechaReprogramar, horaReprogramar); setTurnoAReprogramar(''); setFechaReprogramar(''); setHoraReprogramar(''); }}>Confirmar reprogramación</button>
                       </div>

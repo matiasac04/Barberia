@@ -92,8 +92,8 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
   // Guardia de seguridad: si no hay profesional o servicio seleccionado
   // (porque la API aún no cargó), no renderiza nada y evita errores.
   if (!profesionalActual || !servicioActual) return null;
-  // diaCerrado: true si el día elegido es domingo (App.jsx garantiza que
-  // domingos/lunes están cerrados; acá solo se muestra el aviso).
+  // diaCerrado: true si el día elegido es domingo o lunes (App.jsx garantiza
+  // que esos días están cerrados; acá solo se muestra el aviso).
   const diaCerrado = diaActual.id === 'dom';
   // cantidadLibres: cuenta cuántos horarios libres le quedan a cada barbero
   // en el día seleccionado; se muestra como subtítulo en cada chip del paso 3.
@@ -275,10 +275,10 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
             ) : <p>No tenés turnos próximos todavía.</p>}
           </div>
           {/* Estadísticas: cuántos turnos tiene el usuario y cuántas horas
-              están ocupadas hoy en la barbería. */}
+              están ocupadas el día seleccionado en la barbería. */}
           <div className="stats-row">
             <div><strong>{proximosTurnos.length}</strong><span>Próximos</span></div>
-            <div><strong>{cantidadOcupados}</strong><span>Horas ocupadas hoy</span></div>
+            <div><strong>{cantidadOcupados}</strong><span>Horas ocupadas del día</span></div>
           </div>
         </article>
       </section>

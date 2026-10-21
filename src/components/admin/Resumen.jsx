@@ -9,7 +9,7 @@
 // ¿CÓMO FUNCIONA?
 //
 // Es la pestaña "Resumen": un tablero de solo lectura con un contador por
-// estado de turno. NO calcula nada: App.jsx ya hizo el conteo en `conteoEstados`
+// estado de turno. NO calcula nada: Admin.jsx ya hizo el conteo en `conteoEstados`
 // (un objeto { Confirmado: n, Completado: n, NoSePresento: n, Cancelado: n,
 // Expirado: n }) y le pasa las opciones (`opcionesEstado`) para iterar en el
 // mismo orden que el <select> del panel Turnos.

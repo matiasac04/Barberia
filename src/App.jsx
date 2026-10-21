@@ -24,26 +24,26 @@
 //   cambiarFechaCalendario()              → L486
 //   cerrarSesion()                        → L496
 //   iniciarSesion()                       → L511
-//   ingresarConGoogle()                   → L548
-//   crearCuenta()                         → L558
-//   pedirRecuperacion()                   → L576
-//   cambiarClave()                        → L590
-//   registrarTurno()                      → L610
-//   Datos derivados vista cliente         → L632
-//   anularTurno()/reprogramarTurno()      → L652/660
-//   dividirNombre()                       → L678
-//   registrarProfesional()                → L684
-//   editarProfesional()                   → L694
-//   borrarProfesional()                   → L705
-//   cambiarActivoProfesional()            → L715
-//   registrarServicio()                   → L726
-//   editarServicio()                      → L733
-//   borrarServicio()                      → L742
-//   guardarBloqueosFecha()                → L754
-//   guardarHorariosSemanales()            → L767
-//   editarTurno()                         → L783
-//   borrarTurno()                         → L808
-//   verMisTurnos()                        → L824
+//   ingresarConGoogle()                   → L547
+//   crearCuenta()                         → L557
+//   pedirRecuperacion()                   → L575
+//   cambiarClave()                        → L589
+//   registrarTurno()                      → L609
+//   Datos derivados vista cliente         → L631
+//   anularTurno()/reprogramarTurno()      → L651/659
+//   dividirNombre()                       → L677
+//   registrarProfesional()                → L683
+//   editarProfesional()                   → L693
+//   borrarProfesional()                   → L704
+//   cambiarActivoProfesional()            → L714
+//   registrarServicio()                   → L725
+//   editarServicio()                      → L732
+//   borrarServicio()                      → L741
+//   guardarBloqueosFecha()                → L753
+//   guardarHorariosSemanales()            → L766
+//   editarTurno()                         → L782
+//   borrarTurno()                         → L807
+//   verMisTurnos()/volverAlCliente()      → L823/824
 // ═══════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════
@@ -199,11 +199,11 @@ function App() {
   // Qué pedido de la carga inicial falló, para no quedar en "Cargando datos..."
   // para siempre sin explicar por qué. Vacío = todo cargó bien.
   const [errorCarga, setErrorCarga] = useState('');
-// Contador que se incrementa al pedir "reintentar". El efecto de carga inicial
-// lo tiene entre sus dependencias, así que basta con tocarlo para que vuelva a
-// pedir todo. Antes no había forma de reintentar: la pantalla de error solo
-// ofrecía cerrar sesión.
-const [intentoRecarga, setIntentoRecarga] = useState(0);
+  // Contador que se incrementa al pedir "reintentar". El efecto de carga inicial
+  // lo tiene entre sus dependencias, así que basta con tocarlo para que vuelva a
+  // pedir todo. Antes no había forma de reintentar: la pantalla de error solo
+  // ofrecía cerrar sesión.
+  const [intentoRecarga, setIntentoRecarga] = useState(0);
 
   // ── Sincronización de selección ───────────────────
   // Si el barbero o servicio seleccionado ya no existe en la lista
@@ -231,8 +231,8 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
 
   // Al arrancar (y cada vez que cambia el token) le pregunta al backend
   // "¿este token sigue siendo válido?" (GET /verificar).
-  // Si no lo es → expulsa. Los usuarios de Google se excluyen porque
-  // su token 'mock-google' no es un JWT real del backend.
+  // Si no lo es → expulsa. Se excluyen los usuarios con provider 'google':
+  // son sesiones viejas del mock, cuyo token no es un JWT real del backend.
   useEffect(() => {
     let cancelado = false;
     if (!token || !currentUser || currentUser.provider === 'google') return;
@@ -318,7 +318,7 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
         if (Array.isArray(o)) setBookedRange(o);
         setErrorCarga(fallidas.length ? `No se pudo cargar: ${fallidas.join(', ')}. Revisá que el backend esté corriendo.` : '');
       });
-return () => { cancelado = true; };
+      return () => { cancelado = true; };
     }, [token, intentoRecarga]);
 
   // Vuelve a pedir todos los turnos ocupados del mes entero. Se usa después
@@ -534,17 +534,16 @@ return () => { cancelado = true; };
     } catch (error) { setAvisoAcceso({ type: 'error', message: error.message || 'Credenciales incorrectas.' }); }
   };
 
-  // ⚠️ "Continuar con Google" es SOLO un mock de prueba, NO el login real de
-  // Google (ese código está en la rama respaldo-google, a la espera de que se
-  // configure un GOOGLE_CLIENT_ID). El mock crea un usuario sin idCliente con
-  // un token inválido 'mock-google'.
+  // ⚠️ "Continuar con Google" es SOLO un mock, NO el login real de Google (ese
+  // código está en la rama respaldo-google, a la espera de que se configure un
+  // GOOGLE_CLIENT_ID). Hoy no crea sesión ni token: solo muestra un aviso.
   //
-  // OJO con por qué NO se deja "funcionando" a medias: antes guardaba ese token
-  // en localStorage y ponía al usuario en sesión. Como el backend no reconoce
-  // el token, sus 6 requests de carga inicial devolvían 401, la app caía en la
-  // pantalla de error y ahí se quedaba encerrado (esa pantalla no tenía ni
-  // cerrar sesión). Ahora avisamos en vez de simular una sesión que no existe:
-  // el mock queda para probar la UI sin loguearse de verdad.
+  // OJO con por qué NO se deja "funcionando" a medias: antes guardaba un token
+  // inválido 'mock-google' en localStorage y ponía al usuario en sesión. Como
+  // el backend no reconoce ese token, sus 6 requests de carga inicial devolvían
+  // 401, la app caía en la pantalla de error y ahí se quedaba encerrado (esa
+  // pantalla no tenía ni cerrar sesión). Ahora avisamos en vez de simular una
+  // sesión que no existe: el botón queda para probar la UI sin loguearse.
   const ingresarConGoogle = () => {
     setPantallaAcceso('ingreso');
     setAvisoAcceso({
@@ -632,7 +631,7 @@ return () => { cancelado = true; };
   // ── Datos derivados para vista del cliente ─────────
   const cantidadOcupados = horariosDelDia.length - horariosLibres.length;  // cuántos horarios del día están ocupados
   const emailUsuario = currentUser?.email ?? '';
-  // Turnos del cliente logueado = los confirmadoBookings que son SUYOS
+  // Turnos del cliente logueado = los turnosConfirmados que son SUYOS
   //
   // OJO con el orden: la API los trae como `ORDER BY fecha DESC` (el más nuevo
   // primero), y turnosPendientes/turnosExpirados heredan ese orden. Sin este
@@ -856,9 +855,9 @@ return () => { cancelado = true; };
   // OJO: esta pantalla TIENE que ofrecer salida. Antes renderizaba solo un <p>
   // con el error: sin cabecera, sin botón de cerrar sesión, sin reintentar.
   // El que caía acá quedaba atrapado y lo único que le funcionaba era borrar
-  // el localStorage a mano desde la consola del navegador. Peor: el login mock
-  // de Google (ingresarConGoogle) guarda un token que el backend no reconoce,
-  // así que sus 6 requests dan 401 y caenan acá para siempre.
+  // el localStorage a mano desde la consola del navegador. Peor: el viejo login
+  // mock de Google (ingresarConGoogle) guardaba un token que el backend no
+  // reconoce, así que sus 6 requests daban 401 y caían acá para siempre.
   if (currentUser?.role !== 'admin' && (profesionales.length === 0 || servicios.length === 0)) return (
     <main className="simple-page" style={{ display: 'grid', placeItems: 'center', alignContent: 'center', gap: '1.5rem', minHeight: '100svh', textAlign: 'center' }}>
       <div style={{ display: 'grid', gap: '0.65rem', maxWidth: '34rem' }}>
@@ -910,5 +909,3 @@ return () => { cancelado = true; };
   );
 }
 export default App;
-
-//...

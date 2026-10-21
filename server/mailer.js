@@ -18,9 +18,9 @@
 // restablecer la contraseña (lo llama POST /recuperar en rutasSesion.js).
 // Usa nodemailer con una cuenta de Gmail y una "App Password".
 //
-// El envío es "best effort": el llamador lo dispara DESPUÉS de responder al
-// cliente y con su propio catch, así que si Gmail falla (sin credenciales,
-// límite diario, caída) la reserva ya quedó confirmada en la base igual.
+// El envío es "best effort": el llamador lo espera (await) ANTES de responder,
+// con su propio try/catch, así que si Gmail falla (sin credenciales, límite
+// diario, caída) solo se loguea: la reserva ya quedó confirmada en la base.
 //
 // Credenciales en server/.env: GMAIL_USER y GMAIL_APP_PASS (nunca en el repo).
 // ═══════════════════════════════════════════════════════════════════
