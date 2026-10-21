@@ -367,7 +367,9 @@ router.post("/recuperar", async (req, res) => {
 
     // El link apunta al FRONTEND, no al backend: la pantalla de la SPA es la
     // que pide la nueva contraseña y llama a POST /restablecer.
-    const base = process.env.FRONTEND_URL || "http://localhost:5173";
+    // replace(/\/+$/, "") saca la barra final si la env trae una (ej.
+    // "https://sitio.vercel.app/"): sin eso el link quedaría con "//?reset=".
+    const base = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
     const enlace = `${base}/?reset=${token}`;
 
     // Se espera el envío ANTES de responder: en Vercel la función puede
