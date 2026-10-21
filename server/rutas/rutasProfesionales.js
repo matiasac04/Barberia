@@ -34,10 +34,30 @@
 //    nuevas; POST /bloqueos borra las de ESE DÍA e inserta las nuevas.
 //    Van en transacción: si un INSERT falla a la mitad, no queda un
 //    profesional con la mitad de su horario viejo y la mitad del nuevo.
+//
+// ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y endpoints (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   generarEmailProfesional()                → L67
+//   normalizarEmailOpcional()                → L70
+//   GET    /profesionales?incluirInactivos=1 → L83   (jwt)
+//   POST   /profesionales                    → L106  (jwt + admin)
+//   DELETE /profesionales/:id                → L150  (jwt + admin)
+//   PATCH  /profesionales/:id                → L171  (jwt + admin)
+//   GET    /horarios                         → L238  (jwt)
+//   PUT    /profesionales/:id/horarios       → L263  (jwt + admin)
+//   GET    /bloqueos                         → L362  (jwt)
+//   POST   /profesionales/:id/bloqueos       → L388  (jwt + admin)
+// ═══════════════════════════════════════════════════════════════════
 const router = require("express").Router();
 
+// `sql` aporta los tipos (Int, VarChar, Date, Bit...) y `getPool()` la conexión
+// compartida; esta última se usa mucho acá porque hay dos transacciones.
 const { sql, getPool } = require("../conexion");
+// jwtMiddleware valida el token y requireAdmin el rol admin en las escrituras.
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
+// Helpers de formato reutilizados: errorHora valida 'HH:MM' y errorFecha
+// 'AAAA-MM-DD' antes de que el dato llegue a la base.
 const { errorFecha, errorHora } = require("../validaciones");
 
 // ── Helpers de profesionales ──────────────────────────
@@ -63,8 +83,15 @@ const normalizarEmailOpcional = (email) => (email && String(email).trim() ? Stri
 router.get("/profesionales", jwtMiddleware, async (req, res) => {
   try {
     const db = await getPool();
+    // El query param es texto, así que se compara contra "1" exacto:
+    // ?incluirInactivos=1 habilita ver también las bajas.
     const incluirInactivos = req.query.incluirInactivos === "1";
+    // El nombre completo se arma en SQL: ISNULL(apellido, '') evita que una
+    // concatenación con NULL devuelva NULL (y deje el nombre vacío), y
+    // LTRIM/RTRIM evita el espacio suelto cuando el apellido falta.
     const queryBase = "SELECT idProfesional, LTRIM(RTRIM(nombre + ' ' + ISNULL(apellido, ''))) AS nombre, email, telefono, activo FROM Profesional";
+    // Misma consulta, dos variantes: para el turnero solo las activas
+    // (activo = 1); para el panel admin, todas.
     const query = incluirInactivos ? `${queryBase} ORDER BY idProfesional` : `${queryBase} WHERE activo = 1 ORDER BY idProfesional`;
     const result = await db.request().query(query);
     res.json(result.recordset);
@@ -78,14 +105,20 @@ router.get("/profesionales", jwtMiddleware, async (req, res) => {
 // apellido/telefono pueden ir vacíos, y el email se genera si no viene.
 router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
   const { nombre, apellido, email, telefono } = req.body;
+  // Solo el nombre es obligatorio; además se exige que no sea solo espacios
+  // (trim), porque un "   " pasaría el !nombre y ensuciaría la tabla.
   if (!nombre || !String(nombre).trim()) {
     return res.status(400).json({ error: "El nombre del profesional es obligatorio." });
   }
   try {
     const db = await getPool();
+    // Apellido vacío o con espacios → null (mejor null que "" para que el
+    // ISNULL del GET lo maneje bien).
     const apellidoFinal = apellido && String(apellido).trim() ? String(apellido).trim() : null;
     // Si no hay email → generado. Si hay → el que cargó el admin.
     const emailFinal = normalizarEmailOpcional(email) || generarEmailProfesional();
+    // telefono || null: si viene vacío se guarda NULL en vez de "", así el
+    // campo queda limpio para los chequeos de longitud.
     const result = await db.request()
       .input("nombre", sql.VarChar, String(nombre).trim())
       .input("apellido", sql.VarChar, apellidoFinal)
@@ -96,9 +129,13 @@ router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
         OUTPUT INSERTED.idProfesional
         VALUES (@nombre, @apellido, @email, @telefono)
       `);
+    // 201 + id nuevo: el panel admin lo usa para refrescar la lista.
     res.status(201).json({ mensaje: "Profesional registrado.", idProfesional: result.recordset[0].idProfesional });
   } catch (error) {
     // 2627/2601 = violación de índice único (email repetido).
+    // En Profesional el email es UNIQUE: si el admin cargó uno ya usado, en vez
+    // del 500 genérico se devuelve 409 con la pista de dejarlo vacío (así se
+    // genera uno interno).
     const violacionUnica = error?.number === 2627 || error?.number === 2601;
     if (violacionUnica) {
       return res.status(409).json({ error: "Ya existe un profesional con ese mail. Usá otro o dejá el mail vacío." });
@@ -113,9 +150,12 @@ router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
 router.delete("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res) => {
   try {
     const db = await getPool();
+    // El "DELETE" en realidad es un UPDATE de la bandera activo: nunca se borra
+    // la fila (los turnos viejos siguen apuntando a ella por FK).
     const result = await db.request()
       .input("id", sql.Int, req.params.id)
       .query("UPDATE Profesional SET activo = 0 WHERE idProfesional = @id");
+    // 0 filas afectadas = el id no existía (o ya estaba de baja): 404.
     if (result.rowsAffected[0] === 0) return res.status(404).json({ error: "Profesional no encontrado." });
     res.json({ mensaje: "Profesional dado de baja." });
   } catch (error) {
@@ -131,19 +171,25 @@ router.delete("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res
 router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res) => {
   try {
     const db = await getPool();
+    // El id de la URL se convierte a Number y viaja como sql.Int en cada
+    // fragmento del SET dinámico.
     const id = req.params.id;
     const set = [];
     const reqPatch = db.request().input("id", sql.Int, id);
 
+    // Mismo patrón que PATCH /servicios: cada campo se agrega al SET solo si
+    // llegó definido en el body. Si no, el UPDATE no lo toca.
     if (req.body.nombre !== undefined) {
       set.push("nombre = @nombre");
       reqPatch.input("nombre", sql.VarChar, req.body.nombre);
     }
     if (req.body.apellido !== undefined) {
+      // Igual que en el POST: apellido vacío/spacios → null, no "".
       set.push("apellido = @apellido");
       reqPatch.input("apellido", sql.VarChar, req.body.apellido && String(req.body.apellido).trim() ? String(req.body.apellido).trim() : null);
     }
     if (req.body.telefono !== undefined) {
+      // telefono || null: vacío se guarda como NULL.
       set.push("telefono = @telefono");
       reqPatch.input("telefono", sql.VarChar, req.body.telefono || null);
     }
@@ -151,21 +197,31 @@ router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res)
       // El email tiene un caso especial: si el admin lo borra (viene vacío),
       // NO se deja NULL porque rompería el UNIQUE de los ya existentes.
       // Se lee el actual y, si tampoco sirve, se genera uno interno.
+      // Esta lectura es un viaje extra a la base solo en este caso (borrar el
+      // mail): en los demás updates no se paga.
       const cur = await db.request()
         .input("id", sql.Int, id)
         .query("SELECT email FROM Profesional WHERE idProfesional = @id");
+      // El "||" encadenado prueba en orden: mail nuevo → mail actual → uno
+      // generado. Nunca queda null.
       const emailActual = cur.recordset[0]?.email;
       const emailFinal = normalizarEmailOpcional(req.body.email) || (emailActual && String(emailActual).trim()) || generarEmailProfesional();
       set.push("email = @email");
       reqPatch.input("email", sql.VarChar, emailFinal);
     }
     // activo llega como boolean (del interruptor del admin) → se guarda como BIT.
+    // El typeof filtra valores raros (un string "false" no debería pasar por acá).
     if (typeof req.body.activo === "boolean") {
       set.push("activo = @activo");
+      // sql.Bit convierte el boolean a 0/1, que es lo que guarda la columna BIT.
       reqPatch.input("activo", sql.Bit, req.body.activo ? 1 : 0);
     }
 
+    // Si ninguno de los if agregó nada, no hay UPDATE que hacer (evita una
+    // query inválida con SET vacío).
     if (set.length === 0) return res.status(400).json({ error: "No hay campos para actualizar." });
+    // Igual que en servicios: el único texto interpolado son columnas
+    // hardcodeadas; los valores van como parámetros.
     await reqPatch.query(`UPDATE Profesional SET ${set.join(", ")} WHERE idProfesional = @id`);
     res.json({ mensaje: "Profesional actualizado." });
   } catch (error) {
@@ -182,6 +238,8 @@ router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res)
 router.get("/horarios", jwtMiddleware, async (req, res) => {
   try {
     const db = await getPool();
+    // El WHERE filtra las franjas incompletas: una fila sin entrada o sin
+    // salida no sirve para calcular disponibilidad, así que ni se devuelve.
     const result = await db.request()
       .query(`
         SELECT idProfesional, diaSemana,
@@ -204,22 +262,30 @@ router.get("/horarios", jwtMiddleware, async (req, res) => {
 // híbrido (mitad viejo, mitad nuevo).
 router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (req, res) => {
   const { horarios } = req.body;
+  // Tiene que ser un array: si no, no hay forma de reemplazar nada.
   if (!Array.isArray(horarios)) return res.status(400).json({ error: "Falta la lista de horarios." });
+  // ---------------
+  // VALIDACIÓN PREVIA (antes de borrar el horario viejo)
+  // ---------------
   // Cada horario se valida antes de borrar el anterior. Sin esto, un
   // diaSemana faltante o no numérico llegaba como NaN, mssql lo pasaba a NULL y
   // como HorarioLaboral.diaSemana es nullable el INSERT TENÍA ÉXITO con la
   // fila a NULL: un registro invisible que ni el cálculo del servidor ni el
   // del frontend llegan a leer jamás.
   for (const h of horarios) {
+    // Number() convierte cualquier cosa a número: si no es entero entre 0 y 6,
+    // se rechaza. 0 = domingo, 6 = sábado, igual que getDay() de JS.
     const dia = Number(h && h.diaSemana);
     if (!Number.isInteger(dia) || dia < 0 || dia > 6) {
       return res.status(400).json({ error: "El día de la semana debe ser un número del 0 (domingo) al 6 (sábado)." });
     }
+    // errorHora exige 'HH:MM' exacto; se permite null (franja sin definir).
     if (h.horaEntrada != null) {
       const e = errorHora(h.horaEntrada);
       if (e) return res.status(400).json({ error: `horaEntrada: ${e}` });
     }
     if (h.horaSalida != null) {
+      // Misma validación para la hora de salida.
       const e = errorHora(h.horaSalida);
       if (e) return res.status(400).json({ error: `horaSalida: ${e}` });
     }
@@ -232,6 +298,8 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
   }
   try {
     const db = await getPool();
+    // El id llega como string: Number() lo convierte y se reusa (como número)
+    // en todas las consultas de la transacción.
     const profesionalId = Number(req.params.id);
     // Que el profesional exista se verifica ANTES de abrir la transacción.
     // Antes no se comprobaba nada: un PUT a /profesionales/99999/horarios
@@ -246,16 +314,22 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
       return res.status(404).json({ error: "Profesional no encontrado." });
     }
     const transaction = new sql.Transaction(db);
+    // Arranca la transacción: desde acá los DELETE/INSERT quedan pendientes
+    // hasta el commit (o se deshacen con rollback si algo falla).
     await transaction.begin();
     try {
       // Paso 1: borrar el horario anterior de este profesional.
+      // El WHERE es por idProfesional, así se limpia todo su horario de una.
       await new sql.Request(transaction)
         .input("id", sql.Int, profesionalId)
         .query("DELETE FROM HorarioLaboral WHERE idProfesional = @id");
 
       // Paso 2: insertar el nuevo (si viene lista; si viene vacía = "no trabaja").
+      // Un array vacío NO es error: significa "borrá todo y no pongas nada".
       if (horarios.length > 0) {
         for (const h of horarios) {
+          // Cada insert usa la MISMA transacción (new sql.Request(transaction)),
+          // por eso forma parte del mismo bloque atómico.
           await new sql.Request(transaction)
             .input("idProfesional", sql.Int, profesionalId)
             .input("diaSemana", sql.Int, Number(h.diaSemana))
@@ -268,6 +342,10 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
       await transaction.commit();
       res.json({ mensaje: "Horarios actualizados." });
     } catch (error) {
+      // Si CUALQUIER insert (o el delete) falló, se deshace todo lo hecho
+      // dentro de la transacción y se re-lanza para que caiga en el catch
+      // externo (500). El try interno en el rollback es porque un rollback
+      // sobre una transacción ya rota también puede tirar error.
       try { await transaction.rollback(); } catch {}
       throw error;
     }
@@ -284,6 +362,10 @@ router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (re
 router.get("/bloqueos", jwtMiddleware, async (req, res) => {
   try {
     const db = await getPool();
+    // Sin WHERE: se devuelven todos los bloqueos de una sola vez, porque el
+    // frontend los necesita todos para pintar el calendario en cualquier
+    // combinación de profesional y fecha. CONVERT(varchar(10), fecha, 23)
+    // devuelve la fecha como texto 'YYYY-MM-DD'.
     const result = await db.request()
       .query(`
         SELECT idProfesional, CONVERT(varchar(10), fecha, 23) AS fecha, hora
@@ -304,8 +386,11 @@ router.get("/bloqueos", jwtMiddleware, async (req, res) => {
 // Siempre borra primero las de esa fecha, así el admin puede "desbloquear
 // todo" mandando slots: [] sin borrar filas a mano. Va en transacción.
 router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (req, res) => {
+  // "|| {}" evita un TypeError si el body llegó vacío: así fecha queda
+  // undefined y salta el 400 de la línea de abajo en vez de romper.
   const { fecha, diaCompleto, slots } = req.body || {};
   if (!fecha) return res.status(400).json({ error: "Falta la fecha." });
+  // errorFecha exige 'AAAA-MM-DD'; se valida antes de usarla en el DELETE.
   const errFecha = errorFecha(fecha);
   if (errFecha) return res.status(400).json({ error: errFecha });
   // Un body incompleto soltaba un DELETE que borraba TODOS los bloqueos de ese
@@ -323,6 +408,8 @@ router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (r
   // un solo horario.
   if (Array.isArray(slots)) {
     for (const slot of slots) {
+      // Un null NO se valida (continue): se saltea y no se inserta. Si se
+      // insertara con hora NULL, se transformaría en "día entero bloqueado".
       if (slot == null) continue; // no bloquear nada (se traducía en "cerrar el día")
       const errHora = errorHora(slot);
       if (errHora) return res.status(400).json({ error: `Horario inválido: ${errHora}` });
@@ -343,12 +430,15 @@ router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (r
     await transaction.begin();
     try {
       // Borra los bloqueos previos de ESE profesional + ESA fecha.
+      // El doble WHERE (id Profesional Y fecha) es clave: NO toca los bloqueos
+      // de otros días ni los de otros profesionales.
       await new sql.Request(transaction)
         .input("id", sql.Int, req.params.id)
         .input("fecha", sql.Date, fecha)
         .query("DELETE FROM BloqueoHorario WHERE idProfesional = @id AND fecha = @fecha");
 
       // Caso A: día completo → una sola fila con hora NULL ("cerrado todo").
+      // Se manda el literal NULL en vez de @hora porque no hay valor de hora.
       if (diaCompleto) {
         await new sql.Request(transaction)
           .input("id", sql.Int, req.params.id)
@@ -356,6 +446,8 @@ router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (r
           .query("INSERT INTO BloqueoHorario (idProfesional, fecha, hora) VALUES (@id, @fecha, NULL)");
       }
       // Caso B: horarios sueltos → una fila por horario.
+      // Este else if solo corre si NO es día completo; cada slot inserta una
+      // fila con su hora concreta.
       else if (Array.isArray(slots)) {
         for (const slot of slots) {
           // Los null ya se filtraron en la validación de arriba; el filtro se
@@ -374,6 +466,9 @@ router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (r
       await transaction.commit();
       res.json({ mensaje: "Bloqueos actualizados." });
     } catch (error) {
+      // Rollback de todo (borrado + inserts) si algo falló a mitad de camino.
+      // Acá no hay try anidado en el rollback porque el catch externo ya
+      // maneja cualquier excepción que salga de esta línea.
       await transaction.rollback();
       throw error;
     }
@@ -383,4 +478,5 @@ router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (r
   }
 });
 
+// Se monta sin prefijo en index.js; los paths de acá son los reales.
 module.exports = router;

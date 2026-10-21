@@ -1,4 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   horariosFijos             → L34
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // DATOS SEMILLA — respaldo para arrancar la app
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
@@ -22,4 +28,7 @@
 // CÓMO SE USA EL ALMUERZO: no aparece ningún horario entre las 12:30 y las 15:00
 // porque esa franja NO está en la lista. El break no necesita código extra:
 // simplemente no hay horarios en ese rango.
+// Los slots van en orden ascendente a propósito: la UI del turnero los pinta
+// tal cual vienen (sin reordenar), así que una lista desordenada se vería rara
+// en la grilla de horas.
 export const horariosFijos = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '15:00', '15:30', '16:00', '16:30', '17:00']

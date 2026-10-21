@@ -1,4 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   Profesionales()       → L33
+//   fuente (derivado)     → L36
+//   activos (derivado)    → L38
+//   desactivados (deriv.) → L40
+//   return / render       → L41
+// ═══════════════════════════════════════════════════════════════════
 // PANEL DE PROFESIONALES (admin) — altas, bajas y edición
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
@@ -24,22 +32,29 @@
 // lista completa.
 function Profesionales({ todosProfesionales, profesionales, formularioProfesional, onCambioFormularioProfesional, onGuardarProfesional, onBorrarProfesional, onEmpezarEdicionProfesional, onCancelarEdicionProfesional, onCambiarActivoProfesional }) {
   // ── Separar activos de desactivados ────────────────
+  // Usa todosProfesionales (activos + inactivos) si viene; si no cae a profesionales (solo activos) para compatibilidad
   const fuente = Array.isArray(todosProfesionales) && todosProfesionales.length > 0 ? todosProfesionales : profesionales;
+  // Activos: pueden recibir reservas nuevas
   const activos = fuente.filter((b) => b.activo !== false);
+  // Desactivados: baja lógica, conservan historial; van en <details> plegado
   const desactivados = fuente.filter((b) => b.activo === false);
   return (
     <article className="simple-card admin-panel">
       <h2>Profesionales</h2>
       <p className="admin-note">Agregá, editá o eliminá a los profesionales que atienden la barbería. Si eliminás uno, deja de recibir reservas nuevas.</p>
+      {/* Formulario: si formularioProfesional.id existe es modo edición, sino modo alta */}
       <form className="admin-form" onSubmit={onGuardarProfesional}>
         <input type="text" placeholder="Nombre del profesional" value={formularioProfesional.name} onChange={(e) => onCambioFormularioProfesional((p) => ({ ...p, name: e.target.value }))} />
         <input type="email" placeholder="Email" value={formularioProfesional.email} onChange={(e) => onCambioFormularioProfesional((p) => ({ ...p, email: e.target.value }))} />
         <input type="tel" placeholder="Teléfono" value={formularioProfesional.telefono} onChange={(e) => onCambioFormularioProfesional((p) => ({ ...p, telefono: e.target.value }))} />
         <div className="admin-actions-row">
+          {/* Botón guarda según modo (alta/edición) */}
           <button className="simple-submit" type="submit">{formularioProfesional.id ? 'Guardar cambios' : 'Agregar profesional'}</button>
+          {/* Cancelar solo en modo edición vuelve a formulario vacío */}
           {formularioProfesional.id ? <button className="auth-submit secondary" type="button" onClick={onCancelarEdicionProfesional}>Cancelar</button> : null}
         </div>
       </form>
+      {/* Lista de profesionales activos */}
       <div className="admin-list">
         {activos.map((b) => (
           <div key={b.id} className="admin-row">
@@ -50,13 +65,16 @@ function Profesionales({ todosProfesionales, profesionales, formularioProfesiona
               {b.telefono ? <span> · {b.telefono}</span> : null}
             </div>
             <div className="admin-row-actions">
+              {/* Carga datos en formulario para editar */}
               <button type="button" className="auth-submit tertiary" onClick={() => onEmpezarEdicionProfesional(b)}>Editar</button>
+              {/* Elimina (baja lógica en backend: activo=0) para conservar turnos históricos */}
               <button type="button" className="booking-cancel" onClick={() => onBorrarProfesional(b.id)}>Eliminar</button>
             </div>
           </div>
         ))}
         {activos.length === 0 ? <p className="admin-empty">No hay profesionales activos. Agregá uno arriba.</p> : null}
       </div>
+      {/* Profesionales desactivados en <details> plegado; se pueden reactivar o editar */}
       {desactivados.length > 0 ? (
         <details className="admin-inactive-block">
           <summary>Profesionales desactivados ({desactivados.length})</summary>
@@ -70,7 +88,9 @@ function Profesionales({ todosProfesionales, profesionales, formularioProfesiona
                   {b.telefono ? <span> · {b.telefono}</span> : null}
                 </div>
                 <div className="admin-row-actions">
+                  {/* Reactivar: vuelve activo=1; onCambiarActivoProfesional con false según convención del handler */}
                   <button type="button" className="auth-submit tertiary" onClick={() => onCambiarActivoProfesional(b.id, false)}>Reactivar</button>
+                  {/* Permite editar datos aunque esté inactivo */}
                   <button type="button" className="auth-submit tertiary" onClick={() => onEmpezarEdicionProfesional(b)}>Editar</button>
                 </div>
               </div>

@@ -1,4 +1,24 @@
-﻿/* ═══════════════════════════════════════════════════════════════════
+﻿/* ═══════════════════════════════════════════════════════════════
+   ÍNDICE DEL ARCHIVO — secciones (línea exacta)
+   ═══════════════════════════════════════════════════════════════
+   .simple-page (página base)           → L53
+   .brand-bar / .brand-*                → L54
+   .auth-page / .auth-*                 → L67
+   .simple-form / .simple-feedback      → L111/119
+   .simple-layout / .simple-card        → L131
+   .chip-grid / .simple-chip            → L168
+   .bookings-layout / .booking-item     → L198
+   .admin-*                             → L213
+   .weekly-*                            → L260
+   .booking-status / .status-*          → L276
+   .info-head / .step-panel             → L290
+   @keyframes / .simple-footer          → L299
+   @media                               → L305
+   .avatar / .calendar-*                → L349
+   .whatsapp-float / .reschedule-*      → L392
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════
    App.css — ESTILOS DE LA APLICACIÓN (se importa en App.jsx)
    ═══════════════════════════════════════════════════════════════════
    ¿CÓMO ESTÁ ORGANIZADO?
@@ -84,6 +104,9 @@
 .register-fields input:last-child { grid-column: 1 / -1; }
 .auth-toggle { justify-self: start; display: inline-flex; align-items: center; gap: 8px; color: var(--text-mid); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
 .auth-toggle input { width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer; }
+/* Link "¿Olvidaste tu contraseña?": botón de texto, sin fondo ni borde. */
+.auth-link { justify-self: start; padding: 0; border: none; background: none; color: var(--gold-soft); font-size: 0.9rem; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.auth-link:hover { color: var(--gold); }
 /* ── Formularios e inputs ───────────────────────────── */
 .simple-form input, .auth-fields input, .admin-form input, .admin-form select, .admin-select-group select, .admin-select-group input { width: 100%; min-height: 50px; padding: 0 16px; border-radius: var(--radius-sm); border: 1px solid var(--line-soft); background: rgba(13, 9, 5, 0.55); color: var(--text-hi); transition: border-color 160ms ease, box-shadow 160ms ease; }
 .simple-form input::placeholder, .auth-fields input::placeholder, .admin-form input::placeholder { color: var(--text-low); }
@@ -91,6 +114,9 @@
 .simple-form input:focus, .auth-fields input:focus, .admin-form input:focus, .admin-form select:focus, .admin-select-group select:focus, .admin-select-group input:focus { border-color: rgba(230, 178, 84, 0.75); box-shadow: 0 0 0 4px rgba(230, 178, 84, 0.12); }
 .admin-form select, .admin-select-group select { appearance: none; padding-right: 42px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23e6b254' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; background-color: rgba(13, 9, 5, 0.55); }
 .admin-form select option, .admin-select-group select option { background: #1c140c; color: var(--text-hi); }
+/* .simple-feedback: caja de aviso que aparece debajo de los formularios (login,
+   reserva, paneles admin). Los modificadores .success y .error cambian fondo,
+   borde e icono (::before) según el tipo de mensaje. */
 .simple-feedback { margin-top: 14px; padding: 13px 14px 13px 46px; border-radius: var(--radius-sm); position: relative; background: var(--card-soft); border: 1px solid var(--line-soft); color: var(--text-mid); line-height: 1.5; }
 .simple-feedback::before { content: 'i'; position: absolute; left: 15px; top: 50%; transform: translateY(-50%); width: 19px; height: 19px; display: grid; place-items: center; border-radius: 999px; font-size: 0.72rem; font-weight: 800; font-family: var(--font-body); background: rgba(255, 255, 255, 0.14); color: var(--text-low); }
 .simple-feedback.success { background: var(--ok-bg); border-color: rgba(127, 214, 162, 0.24); color: #c8f0d8; }
@@ -135,6 +161,10 @@
 .calendar-hint { margin-top: 8px; color: var(--text-low); line-height: 1.45; font-size: 0.9rem; }
 .slots-empty { padding: 14px 16px; border-radius: var(--radius-sm); background: rgba(230, 178, 84, 0.08); border: 1px dashed var(--line); color: var(--text-mid); line-height: 1.5; font-size: 0.92rem; }
 .hours-hint { margin-top: 8px; color: var(--text-low); line-height: 1.45; font-size: 0.86rem; }
+/* Grillas de chips del turnero: .hours-grid (horas, 3 columnas), .service-grid
+   (servicios, 2 columnas) y .simple-chip, el botón base. Los estados del chip
+   son .selected (elegido, degradado dorado) y .occupied (ocupado/bloqueado,
+   tachado, atenuado y con cursor not-allowed). */
 .chip-grid { display: grid; gap: 10px; }
 .hours-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -163,6 +193,8 @@
 .stats-row div { padding: 15px; border-radius: var(--radius-md); background: var(--card-soft); border: 1px solid var(--line-soft); text-align: center; }
 .stats-row strong { display: block; font-family: var(--font-display); font-size: 1.7rem; color: var(--gold-soft); }
 .stats-row span { color: var(--text-low); }
+/* Vista "Mis turnos" en dos columnas: .bookings-layout divide la pantalla en
+   dos paneles (próximos y pasados) y .bookings-panel les da altura mínima. */
 .bookings-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .bookings-panel { min-height: 320px; }
 .bookings-list { margin-top: 14px; }
@@ -221,6 +253,10 @@
 .admin-form-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 .admin-form-actions .simple-submit { width: auto; }
 .admin-form-actions .simple-submit.secondary { background: var(--card-soft); color: var(--text-hi); border: 1px solid var(--line); box-shadow: none; }
+/* Editor de horario semanal (Admin/Horarios.jsx): .weekly-horarios lista los
+   días; cada .weekly-day tiene su checkbox (.weekly-toggle) y hasta dos rangos
+   de horas (.weekly-ranges con inputs type="time"). Los días sin atención se
+   atenúan con .weekly-day-off y muestran el .weekly-off-badge. */
 .weekly-horarios { display: grid; gap: 10px; }
 .weekly-day { display: grid; gap: 10px; padding: 14px; border-radius: var(--radius-md); background: var(--card-soft); border: 1px solid var(--line-soft); }
 .weekly-day-off { opacity: 0.75; }
@@ -234,6 +270,9 @@
 .weekly-range span { color: var(--text-low); font-weight: 700; }
 .weekly-off-badge { width: fit-content; padding: 2px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #78350f; background: #fef3c7; }
 .admin-booking-row { align-items: flex-start; }
+/* Badges de estado de turno: .booking-status es la base (píldora) y las
+   clases .status-* teñen cada estado (confirmado, completado, no se presentó,
+   cancelado) con el color de la variable del tema correspondiente. */
 .booking-status { display: inline-flex; width: fit-content; margin-top: 8px; padding: 6px 12px; border-radius: 999px; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid transparent; }
 .status-confirmed { background: rgba(230, 178, 84, 0.12); color: var(--gold-soft); border-color: rgba(230, 178, 84, 0.22); }
 .status-completed { background: var(--ok-bg); color: var(--ok); border-color: rgba(127, 214, 162, 0.22); }
@@ -366,6 +405,9 @@
 .reschedule-panel h4 { margin: 0; font-size: 0.92rem; color: var(--text-hi); }
 .reschedule-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .reschedule-save { width: 100%; }
+/* Detalles finales: el botón principal deshabilitado (opacity + sin sombra ni
+   desplazamiento al hover) y la anulación de los spinners de los inputs
+   numéricos, que molestan al tipear precios y duraciones en el admin. */
 .simple-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }

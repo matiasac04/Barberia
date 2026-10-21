@@ -1,4 +1,22 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   require('dotenv') config         → L47
+//   imports (express, cors, rutas)   → L49
+//   const app = express()            → L63
+//   app.set("trust proxy", 1)        → L81
+//   helmet()                         → L89
+//   cors()                           → L97
+//   express.json()                   → L102
+//   limiter (global 300/15 min)      → L106
+//   authLimiter (login/registro/recuperar/restablecer) → L125
+//   rutas montadas (5 routers)       → L147
+//   middleware 404                   → L155
+//   middleware 500                   → L163
+//   const PORT                       → L174
+//   app.listen + pre-calentado       → L176
+//   module.exports = app             → L191
+// ═══════════════════════════════════════════════════════════════════
 // server/index.js — PUNTO DE ENTRADA DEL BACKEND (Express)
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
@@ -15,8 +33,8 @@
 //   cors    → permite que el frontend (otro origen) consuma la API
 //   json    → parsea body JSON a req.body
 //   limiter → frena abuso: máx 300 requests por IP cada 15 min (global)
-//   authLimiter → más estricto SOLO en /login y /registro: 20 por 15 min
-//     (protege contra ataques de fuerza bruta a contraseñas)
+//   authLimiter → más estricto en /login, /registro, /recuperar y
+//     /restablecer: 20 por 15 min (fuerza bruta y spam de mails)
 //
 // RUTAS: se montan sin prefijo, cada archivo define sus propios paths
 // (rutasSesion, rutasClientes, rutasTurnos, rutasProfesionales, rutasServicios).
@@ -62,8 +80,25 @@ const app = express();
 // momento en que se registra la request.
 app.set("trust proxy", 1);
 
+// helmet solo agrega cabeceras de seguridad a la respuesta; no toca rutas ni
+// lógica. Los defaults de la librería ya frenan el clickjacking (que otro
+// sitio embeba nuestras respuestas dentro de un iframe), el MIME sniffing
+// (que el navegador adivine el tipo de contenido) y la fuga del Referer hacia
+// otros dominios. No hace falta configurarlo: esta API solo devuelve JSON, las
+// reglas estrictas (CSP) no aplican a páginas que nosotros no servimos.
 app.use(helmet());  // cabeceras de seguridad
+// cors() sin opciones deja que CUALQUIER origen llame a la API desde su
+// navegador (Access-Control-Allow-Origin: *). Es un trade-off deliberado: no
+// usamos cookies de sesión (el JWT viaja en el header Authorization, que el
+// navegador nunca manda solo), así que un sitio ajeno puede leer los GET
+// públicos, pero no puede hacer escrituras sin tener el token a mano. Si
+// algún día se pasa a cookies con credenciales, hay que restringir acá la
+// lista de orígenes permitidos.
 app.use(cors());    // CORS abierto (API pública de solo lectura + escritura con JWT)
+// express.json() convierte los bodies application/json en req.body. Va ANTES
+// de las rutas: sin él req.body quedaría undefined y todo POST/PATCH moriría.
+// Además limita el payload a 100 kB: un body gigante se rechaza con 413 en
+// vez de quedarse comiendo memoria del servidor.
 app.use(express.json());  // body JSON → req.body
 
 // Rate limit GLOBAL: 300 requests / 15 min por IP. Evita que un cliente
@@ -71,6 +106,10 @@ app.use(express.json());  // body JSON → req.body
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
+  // standardHeaders manda los headers RateLimit-* de la versión vigente del
+  // estándar (los que hoy leen los proxies y el frontend para saber cuánto
+  // queda de cuota); legacyHeaders:false apaga los viejos X-RateLimit-*, que
+  // pertenecen a una especificación descartada y quedarían redundantes.
   standardHeaders: true,
   legacyHeaders: false,
   // El 429 tiene que ser JSON: el frontend hace res.json() y si le llega
@@ -80,18 +119,27 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Rate limit para AUTENTICACIÓN: 20 intentos / 15 min por IP en /login y
-// /registro. Mucho más estricto: frena ataques de fuerza bruta a contraseñas.
+// Rate limit para AUTENTICACIÓN: 20 intentos / 15 min por IP en /login,
+// /registro, /recuperar y /restablecer. Mucho más estricto: frena ataques de
+// fuerza bruta a contraseñas y el spam de mails de recuperación.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
+  // Mismos headers que el limiter global (RateLimit-* vigentes, sin los
+  // viejos X-RateLimit-*).
   standardHeaders: true,
   legacyHeaders: false,
   // Mismo motivo que el global: el 429 tiene que ser JSON para que el
   // frontend pueda mostrar un mensaje útil en vez de "Error en la solicitud".
   message: { error: "Demasiados intentos de acceso. Esperá 15 minutos y volvé a intentar." },
 });
-app.use(["/login", "/registro"], authLimiter);
+// El array registra el mismo middleware en cada path sin repetir app.use.
+// Los paths son los finales, sin prefijo (igual que los routers de abajo).
+// /recuperar entra acá para que no se pueda usar como generador de mails y
+// /restablecer porque recibe una contraseña nueva (mismo riesgo de fuerza
+// bruta que el login). Si algún día aparece otro endpoint que reciba
+// contraseñas, hay que sumarlo acá o queda sin freno.
+app.use(["/login", "/registro", "/recuperar", "/restablecer"], authLimiter);
 
 // ── Rutas ─────────────────────────────────────────────
 // Cada router se registra con app.use sin prefijo. El path final de cada
@@ -119,6 +167,10 @@ app.use((err, req, res, _next) => {
 
 // ── Iniciar servidor ──────────────────────────────────
 // Puerto 3000 por defecto, o el que indique PORT en server/.env.
+// El 3000 no es casual: en local el frontend apunta a http://localhost:3000
+// (src/servicios/api.js), así que ambos lados tienen que coincidir. En Vercel
+// el hosting inyecta su propio PORT en el entorno y acá lo tomamos tal cual,
+// sin cambiar código.
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {

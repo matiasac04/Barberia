@@ -1,4 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   require('dotenv') config          → L54
+//   sql = require('mssql')            → L60
+//   config (datos de conexión)        → L65
+//   pool / lastPoolCheck              → L97
+//   POOL_PING_INTERVAL                → L99
+//   reconociendo (lock de conexión)   → L111
+//   getPool()                         → L115
+//   module.exports { sql, getPool }   → L175
+// ═══════════════════════════════════════════════════════════════════
 // server/conexion.js — GESTIÓN DE LA CONEXIÓN A SQL SERVER
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
@@ -42,6 +53,10 @@
 // estén en process.env y NO hardcodeadas en el código.
 require('dotenv').config();
 
+// Driver oficial de Microsoft para SQL Server en Node. Se require una sola
+// vez, acá, y se reexporta al final: las rutas no lo importan directamente,
+// reciben `sql` de este módulo para usar los tipos en los .input() de sus
+// queries (sql.Int, sql.Date, sql.VarChar…) y para armar transacciones.
 const sql = require('mssql');
 
 // Datos de conexión leídos desde server/.env:
@@ -52,6 +67,14 @@ const config = {
     password: process.env.psw_bd,
     server: process.env.servidor_bd,
     database: process.env.nombre_bd,        
+    // encrypt:true mantiene el tráfico cifrado con TLS de punta a punta; el
+    // servidor de la nube rechaza conexiones sin cifrar, así que en la práctica
+    // no es opcional. trustServerCertificate:true es el trade-off: Somee no
+    // entrega un certificado firmado por una CA conocida y validar ese
+    // certificado haría fallar el handshake (no se podría conectar nunca).
+    // Aceptar el certificado sin verificarlo baja la defensa contra un
+    // ataque man-in-the-middle: el canal igual va cifrado, pero no se comprueba
+    // con quién hablás. Es el precio de apuntar a esa base gratuita.
     options: {
         encrypt: true,                // cifra la conexión (obligatorio en la nube)
         trustServerCertificate: true  // confía en el certificado (Somee no da uno firmado)
@@ -118,9 +141,17 @@ async function getPool() {
 
             // 2b) No hay pool (primera vez) o quedó inválido → conectamos de nuevo.
             try {
+                // sql.connect(config) devuelve el POOL (la conexión compartida
+                // que reutiliza todas las requests), no una conexión por query.
+                // Por eso se guarda en la variable `pool` de arriba: es la que
+                // después devolvemos en cada llamada a getPool().
                 pool = await sql.connect(config);
             } catch (err) {
                 console.error("Error al conectar a la base de datos: ", err);
+                // El error no se traga acá: sube por la promesa hasta el
+                // try/catch de cada ruta (Express 5 también manda las promesas
+                // rechazadas al handler de errores de index.js si se escapa),
+                // que responde un 500 genérico sin filtrar detalles internos.
                 throw err;  // si no se puede conectar, no hay nada que hacer
             }
             lastPoolCheck = Date.now();

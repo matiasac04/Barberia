@@ -18,7 +18,13 @@ CREATE TABLE Cliente (
     apellido VARCHAR(100),
     email VARCHAR(150) UNIQUE,
     telefono VARCHAR(20),
-    password VARCHAR(255)
+    password VARCHAR(255),
+    -- Recuperación de contraseña: se guarda el SHA-256 (64 caracteres hex) del
+    -- token que viaja en el link del mail, NUNCA el token en claro. tokenExpira
+    -- define la ventana de validez (1 hora). Ambos quedan en NULL cuando no hay
+    -- un pedido de recuperación pendiente o después de usarlo.
+    tokenRecuperacion VARCHAR(64) NULL,
+    tokenExpira DATETIME NULL
 );
 
 CREATE TABLE Administrador (

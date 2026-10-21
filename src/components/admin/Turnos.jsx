@@ -1,4 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   Turnos()                → L32
+//   turnosFiltrados         → L38
+//   return / render         → L43
+// ═══════════════════════════════════════════════════════════════════
 // PANEL DE TURNOS (admin) — editar y eliminar cualquier turno
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
@@ -24,9 +30,11 @@ import FiltrosTurnos from './FiltrosTurnos';
 import { fechaAIso } from '../../utilidades/funciones';
 
 function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado, opcionesEstado, turnos, onCambioFormularioTurno, onGuardarTurno, onBorrarTurno, onEmpezarEdicionTurno, servicios, turnoSeleccionado }) {
+  // Filtros locales para listar turnos; por defecto filtra por fecha de hoy
   const [filtroProfesional, setFiltroProfesional] = useState('todos');
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const [filtroFecha, setFiltroFecha] = useState(() => fechaAIso(new Date()));
+  // Filtra localmente (los datos vienen de App.jsx); no recalcula estado Expirado acá, eso lo hace App/funciones
   const turnosFiltrados = turnos.filter((b) =>
     (filtroProfesional === 'todos' || String(b.idProfesional) === String(filtroProfesional)) &&
     (filtroEstado === 'todos' || b.estado === filtroEstado) &&
@@ -36,15 +44,19 @@ function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado,
     <article className="simple-card admin-panel">
       <h2>Editar turnos</h2>
       <p className="admin-note">Elegí un turno de la lista para cargarlo en el formulario y editarlo.</p>
+      {/* Filtros compartidos para acotar la lista sin perder el estado global */}
       <FiltrosTurnos profesionales={profesionales} etiquetasEstado={etiquetasEstado} filtroProfesional={filtroProfesional} setFiltroProfesional={setFiltroProfesional} filtroEstado={filtroEstado} setFiltroEstado={setFiltroEstado} filtroFecha={filtroFecha} setFiltroFecha={setFiltroFecha} />
       <div className="admin-divider"><span>Editar turno</span></div>
       {turnoSeleccionado ? (
+        // Formulario de edición: datos vienen de Admin.jsx vía formularioTurno; submit dispara onGuardarTurno (PATCH)
         <form className="admin-form admin-booking-form" onSubmit={onGuardarTurno}>
           <div className="admin-inline-grid">
+            {/* Datos del cliente */}
             <input type="text" placeholder="Nombre del cliente" value={formularioTurno.nombreCliente} onChange={(e) => onCambioFormularioTurno((p) => ({ ...p, nombreCliente: e.target.value }))} />
             <input type="tel" placeholder="Celular" value={formularioTurno.telefonoCliente} onChange={(e) => onCambioFormularioTurno((p) => ({ ...p, telefonoCliente: e.target.value }))} />
           </div>
           <div className="admin-inline-grid">
+            {/* Profesional y servicio seleccionables para corregir asignación */}
             <select value={formularioTurno.idProfesional} onChange={(e) => onCambioFormularioTurno((p) => ({ ...p, idProfesional: e.target.value }))}>
               {profesionales.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
@@ -53,10 +65,12 @@ function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado,
             </select>
           </div>
           <div className="admin-inline-grid">
+            {/* Fecha/hora editables */}
             <input type="date" value={formularioTurno.fecha} onChange={(e) => onCambioFormularioTurno((p) => ({ ...p, fecha: e.target.value }))} />
             <input type="time" value={formularioTurno.hora} onChange={(e) => onCambioFormularioTurno((p) => ({ ...p, hora: e.target.value }))} />
           </div>
           <div className="admin-inline-grid">
+            {/* Estado: solo opcionesEstado permitidas (sin 'Expirado' para edición manual) */}
             <select value={formularioTurno.estado} onChange={(e) => onCambioFormularioTurno((p) => ({ ...p, estado: e.target.value }))}>
               {opcionesEstado.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
@@ -65,19 +79,25 @@ function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado,
         </form>
       ) : <p className="admin-note">No hay turnos para editar.</p>}
       <div className="admin-list">
+        {/* Lista filtrada: al clickear Editar se carga el turno en el formulario vía onEmpezarEdicionTurno */}
         {turnosFiltrados.map((b) => (
           <div key={b.id} className="admin-row admin-booking-row">
             <div>
               <strong>{b.nombreCliente}</strong>
+              {/* Datos descriptivos del turno */}
               <span>{b.nombreProfesional} · {b.nombreServicio} · {b.fecha} · {b.hora}</span>
+              {/* Estado con etiqueta y clase; fallback por si llega algo inesperado */}
               <span className={`booking-status ${clasesEstado[b.estado] ?? 'status-cancelled'}`}>{etiquetasEstado[b.estado] ?? b.estado}</span>
             </div>
             <div className="admin-row-actions">
+              {/* Carga el turno seleccionado en el formulario de edición */}
               <button type="button" className="auth-submit tertiary" onClick={() => onEmpezarEdicionTurno(b)}>Editar</button>
+              {/* Borra el turno (DELETE) vía App.jsx */}
               <button type="button" className="booking-cancel" onClick={() => onBorrarTurno(b.id)}>Eliminar</button>
             </div>
           </div>
         ))}
+        {/* Mensaje si no hay coincidencias con filtros */}
         {turnosFiltrados.length === 0 ? <p className="admin-empty">No hay turnos que coincidan con los filtros.</p> : null}
       </div>
     </article>

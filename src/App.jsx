@@ -1,4 +1,52 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   Constantes (today, calendarStart...) → L109
+//   App()                                 → L115
+//   Estado global                         → L116
+//   useEffect sincronización selección    → L214
+//   expulsarPorSesion()                   → L225
+//   useEffect verificar token             → L236
+//   cargarProfesionales()                 → L249
+//   cargarTodosProfesionales()            → L259
+//   cargarServicios()                     → L268
+//   useEffect carga inicial               → L291
+//   refrescarOcupados()                   → L326
+//   normalizarHoraApi()                   → L344
+//   cargarDisponibilidad()                → L357
+//   useEffect cargarDisponibilidad        → L369
+//   cargarMisTurnos()                     → L375
+//   useEffect cargarMisTurnos/auto-refresco → L392/396
+//   cargarTurnosAdmin()                   → L406
+//   useEffect cargarTurnosAdmin           → L421
+//   turnosOcupados (useMemo)              → L427
+//   Datos derivados                       → L445
+//   cambiarFechaCalendario()              → L486
+//   cerrarSesion()                        → L496
+//   iniciarSesion()                       → L511
+//   ingresarConGoogle()                   → L548
+//   crearCuenta()                         → L558
+//   pedirRecuperacion()                   → L576
+//   cambiarClave()                        → L590
+//   registrarTurno()                      → L610
+//   Datos derivados vista cliente         → L632
+//   anularTurno()/reprogramarTurno()      → L652/660
+//   dividirNombre()                       → L678
+//   registrarProfesional()                → L684
+//   editarProfesional()                   → L694
+//   borrarProfesional()                   → L705
+//   cambiarActivoProfesional()            → L715
+//   registrarServicio()                   → L726
+//   editarServicio()                      → L733
+//   borrarServicio()                      → L742
+//   guardarBloqueosFecha()                → L754
+//   guardarHorariosSemanales()            → L767
+//   editarTurno()                         → L783
+//   borrarTurno()                         → L808
+//   verMisTurnos()                        → L824
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // App.jsx — EL CORAZÓN DE LA APLICACIÓN (estado global + orquestador)
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA ESTE ARCHIVO?
@@ -51,7 +99,7 @@ import WhatsApp from './components/comunes/WhatsApp';        // Botón flotante 
 // Datos semilla (respaldo de arranque, la DB es la fuente real):
 import { horariosFijos } from './datos/semilla';
 // Funciones de la API (todas las llamadas al backend, ver src/servicios/api.js):
-import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, verificarToken } from './servicios/api';
+import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, restablecerPassword, solicitarRecuperacion, verificarToken } from './servicios/api';
 // Utilidades de fechas/horarios/estados (ver src/utilidades/funciones.js):
 import { sePuedeCancelar, formatoFecha, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, horariosPasados, esDiaCerrado, estadoDelTurno, datosDelDia, fechaAIso } from './utilidades/funciones';
 
@@ -76,13 +124,30 @@ function App() {
   //   sesionIniciada→ ¿hay token Y usuario? Si no → muestra el login.
   // -------------------------------------------------------------------
   const [vista, setVista] = useState('cliente');
+  // OJO: el valor inicial de token/currentUser es una FUNCIÓN (() => ...), no un
+  // valor directo. Así React la ejecuta UNA sola vez al montar (lazy init) y no
+  // en cada render. El try/catch protege contra navegadores que bloquean
+  // localStorage (modo incógnito, cookies desactivadas): sin eso, la app entera
+  // revienta al arrancar en vez de mostrar el login.
   const [token, setToken] = useState(() => { try { return localStorage.getItem('token') ?? ''; } catch { return ''; } });
   const [currentUser, setCurrentUser] = useState(() => { try { return JSON.parse(localStorage.getItem('currentUser') ?? 'null'); } catch { return null; } });
+  // sesionIniciada no es estado: se DERIVA en cada render a partir de token +
+  // currentUser. Si ambos tienen valor hay sesión; si falta alguno, se muestra el login.
   const sesionIniciada = Boolean(token && currentUser);
 
-  // Formulario de ingreso: pantalla activa ('ingreso' | 'registro') y sus campos
-  const [pantallaAcceso, setPantallaAcceso] = useState('ingreso');
+  // Formulario de ingreso: pantalla activa ('ingreso' | 'registro' |
+  // 'recuperar' | 'restablecer') y sus campos.
+  // Si la URL trae ?reset=<token>, la app abre directamente la pantalla para
+  // elegir una nueva contraseña: es el link que llega por mail.
+  const [pantallaAcceso, setPantallaAcceso] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('reset') ? 'restablecer' : 'ingreso'; } catch { return 'ingreso'; }
+  });
   const [correoIngreso, setCorreoIngreso] = useState(''); const [claveIngreso, setClaveIngreso] = useState('');
+  // tokenRecuperacion: token del link del mail (solo vive en memoria + URL).
+  // correoRecuperacion y claveNueva: campos de las pantallas de recuperación.
+  const [tokenRecuperacion, setTokenRecuperacion] = useState(() => { try { return new URLSearchParams(window.location.search).get('reset') ?? ''; } catch { return ''; } });
+  const [correoRecuperacion, setCorreoRecuperacion] = useState('');
+  const [claveNueva, setClaveNueva] = useState('');
   const [formularioRegistro, setFormularioRegistro] = useState({ nombre: '', apellido: '', email: '', telefono: '', password: '' });
   // Mensaje que se muestra en la pantalla de ingreso (idle/error/success)
   const [avisoAcceso, setAvisoAcceso] = useState({ type: 'idle', message: 'Primero iniciá sesión para acceder al turnero.' });
@@ -143,9 +208,15 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
   // ── Sincronización de selección ───────────────────
   // Si el barbero o servicio seleccionado ya no existe en la lista
   // (por ejemplo al recargar datos), se vuelve a seleccionar el primero.
+  // Dependencias: el efecto se re-dispara con cada cambio de la lista O de la
+  // selección actual. El `if` de guardia es clave: solo setea si la selección
+  // es inválida, así no se entra en un bucle infinito de setState → render → effect.
   useEffect(() => { if (profesionales.length > 0 && !profesionales.some((b) => b.id === profesionalSeleccionado)) setProfesionalSeleccionado(profesionales[0].id); }, [profesionales, profesionalSeleccionado]);
+  // Mismo mecanismo que el de arriba aplicado al servicio elegido.
   useEffect(() => { if (servicios.length > 0 && !servicios.some((s) => s.id === servicioSeleccionado)) setServicioSeleccionado(servicios[0].id); }, [servicioSeleccionado, servicios]);
-  // Pre-carga el nombre y teléfono del cliente logueado en el formulario
+  // Pre-carga el nombre y teléfono del cliente logueado en el formulario.
+  // Depende de [currentUser]: se re-dispara al loguearse o cambiar de usuario,
+  // así los campos quedan llenos con sus datos sin escribirlos a mano.
   useEffect(() => { setNombreCliente(currentUser?.name ?? ''); setTelefonoCliente(currentUser?.phone ?? ''); }, [currentUser]);
 
   // ── Sesión y autenticación ───────────────────────
@@ -230,6 +301,9 @@ const [intentoRecarga, setIntentoRecarga] = useState(0);
       .then(([rp, rpa, rs, rb, rh, ro]) => {
         if (cancelado) return;
         const fallidas = [];
+        // Truco del `?? (fallidas.push(...), null)`: si valor() devolvió null
+        // (request rechazada), el paréntesis con coma ejecuta el push (anota la
+        // falla) y devuelve null. Si valor() devolvió datos, el ?? los usa tal cual.
         const p = valor(rp, 'profesionales') ?? (fallidas.push('profesionales'), null);
         const pa = valor(rpa, 'todos los profesionales') ?? (fallidas.push('todos los profesionales'), null);
         const s = valor(rs, 'servicios') ?? (fallidas.push('servicios'), null);
@@ -288,6 +362,10 @@ return () => { cancelado = true; };
       .catch(() => setHorariosOcupadosApi([]))
       .finally(() => setLoadingAvailability(false));  // siempre apaga el indicador de carga
   }, [token, fechaSeleccionada, profesionalSeleccionado, normalizarHoraApi]);
+  // Este useEffect "pegotea" la función al ciclo de vida: corre al montar y
+  // CADA VEZ que cambia cargarDisponibilidad (que a su vez depende de token,
+  // fechaSeleccionada y profesionalSeleccionado). Así, cambiar de día o de
+  // barbero vuelve a consultar a la API sin tener que llamarla a mano.
   useEffect(() => { cargarDisponibilidad(); }, [cargarDisponibilidad]);
 
   // Trae los turnos del CLIENTE logueado y los convierte a un formato único
@@ -307,6 +385,10 @@ return () => { cancelado = true; };
       }));
     } catch (error) { if (error?.status === 401) expulsarPorSesion(); }
   }, [currentUser, token, expulsarPorSesion, normalizarHoraApi]);
+  // Carga inicial de "Mis turnos" para el cliente (el admin no la necesita:
+  // su lista la trae cargarTurnosAdmin). El `if` la salta si el rol es admin;
+  // se re-dispara si cambia la sesión, el rol o la función (que cambia con
+  // currentUser/token).
   useEffect(() => { if (sesionIniciada && currentUser?.role !== 'admin') cargarMisTurnos(); }, [sesionIniciada, cargarMisTurnos, currentUser?.role]);
   // Auto-refresco para el cliente: vuelve a cargar "Mis turnos" cada 20
   // segundos y al volver a la pestaña (visibilitychange). Así el estado de
@@ -334,6 +416,8 @@ return () => { cancelado = true; };
       }));
     } catch (error) { if (error?.status === 401) expulsarPorSesion(); }
   }, [token, expulsarPorSesion, normalizarHoraApi]);
+  // Espejo del effect del cliente: solo corre si el rol es 'admin' y se
+  // re-dispara ante cambios de sesión, de rol o de la función memorizada.
   useEffect(() => { if (sesionIniciada && currentUser?.role === 'admin') cargarTurnosAdmin(); }, [sesionIniciada, cargarTurnosAdmin, currentUser?.role]);
 
   // ── Disponibilidad del día (horarios libres/ocupados) ──
@@ -344,6 +428,8 @@ return () => { cancelado = true; };
     const snap = {};  // el mapa arranca vacío; lo llenan los turnos de abajo
     const meter = (idProfesional, dayKey, time) => {  // marca una hora como ocupada
       if (idProfesional == null || dayKey == null || !time) return;
+      // `?? (=)` crea el sub-objeto del barbero la primera vez que se lo usa:
+      // si snap[idProfesional] no existe, lo asigna vacío y devuelve {}.
       const bs = snap[idProfesional] ?? (snap[idProfesional] = {});
       bs[dayKey] = [...(bs[dayKey] ?? []), time];
     };
@@ -357,11 +443,19 @@ return () => { cancelado = true; };
   }, [rangoReservado, turnosConfirmados, normalizarHoraApi]);
 
   // ── Datos derivados del día seleccionado ──────────
+  // Objeto completo del profesional/servicio elegido (para mostrar nombre y
+  // precio en el resumen). El ?? atrasa al primero de la lista como respaldo
+  // y termina en null si la lista todavía está vacía (cargando).
   const profesionalActual = profesionales.find((b) => b.id === profesionalSeleccionado) ?? profesionales[0] ?? null;
   const servicioActual = servicios.find((s) => s.id === servicioSeleccionado) ?? servicios[0] ?? null;
+  // La 'T00:00:00' no es decorativa: sin ella, new Date('YYYY-MM-DD') se
+  // interpreta como medianoche UTC y en Argentina (UTC-3) getDay() podría
+  // devolver el día ANTERIOR. Con la T se ancla a medianoche local.
   const diaSeleccionado = new Date(`${fechaSeleccionada}T00:00:00`);
   const patronDiaSeleccionado = patronDelDia(diaSeleccionado);  // 'weekday' | 'saturday' | null
   const fechaFormateada = formatoFecha(diaSeleccionado);     // { label, date }
+  // Objeto "día" con el formato que espera la cabecera del turnero (Inicio.jsx).
+  // Si el día está cerrado, id queda 'dom' como respaldo para no romper la UI.
   const diaActual = { id: patronDiaSeleccionado ?? 'dom', label: fechaFormateada.label, date: fechaFormateada.date };
   // Horarios posibles del día: usa el horario laboral si existe en la DB,
   // si no, cae en el horario fijo de respaldo (horariosFijos de semilla.js)
@@ -378,6 +472,8 @@ return () => { cancelado = true; };
   // Auto-ajuste de la hora elegida: si no quedan horarios la limpia; si el
   // horario elegido dejó de estar disponible, elige el primero libre.
   useEffect(() => { if (horariosLibres.length === 0) { setHoraSeleccionada(''); return; } if (!horariosLibres.includes(horaSeleccionada)) setHoraSeleccionada(horariosLibres[0]); }, [horariosLibres, horaSeleccionada]);
+  // true si la hora elegida está ocupada/bloqueada/pasada (o si no hay ninguna
+  // seleccionada): habilita o no el botón de confirmar y el mensaje de error.
   const horaEstaOcupada = horaSeleccionada ? horariosNoDisponibles.includes(horaSeleccionada) : true;
   // Reglas de negocio aplicadas al día seleccionado:
   const esDomingoOLunes = esDiaCerrado(diaSeleccionado.getDay());  // ¿cerrado ese día?
@@ -399,6 +495,8 @@ return () => { cancelado = true; };
   // Logout: limpia estado + localStorage y vuelve a la pantalla de login.
   const cerrarSesion = () => {
     setToken(''); setCurrentUser(null); setTurnosConfirmados([]);
+    // El try/catch vacío tapa fallos de localStorage/history (modo incógnito,
+    // sandbox del navegador): el logout tiene que funcionar aunque no se pueda borrar nada.
     try { localStorage.removeItem('token'); localStorage.removeItem('currentUser'); history.replaceState(null, '', window.location.pathname); } catch {}
     setVista('cliente'); setPantallaAcceso('ingreso'); setCorreoIngreso(''); setClaveIngreso('');
     setFormularioRegistro({ nombre: '', apellido: '', email: '', telefono: '', password: '' });
@@ -418,8 +516,13 @@ return () => { cancelado = true; };
       setAvisoAcceso({ type: 'idle', message: 'Iniciando sesión...' });
       const r = await loginCliente(cred, pass);
       if (r?.role === 'admin') {
+        // El admin NO es un cliente de la DB, por eso idCliente queda null: es
+        // la señal que usa el resto del código para no dejar reservar turnos
+        // desde la vista de administración.
         const admin = { idCliente: null, idAdmin: r.admin?.idAdmin ?? null, name: r.admin?.nombre ?? 'Administrador', email: r.admin?.email ?? cred, role: 'admin', usuario:r.admin?.usuario ?? '' };
         setToken(r.token); setCurrentUser(admin);
+        // Se persiste en localStorage para que la sesión sobreviva al F5.
+        // El try/catch evita que un navegador que bloquea storage rompa el login.
         try { localStorage.setItem('token', r.token); localStorage.setItem('currentUser', JSON.stringify(admin)); } catch {}
         setVista('admin'); setAvisoAcceso({ type: 'success', message: 'Acceso de administrador habilitado.' });
       } else {
@@ -467,6 +570,39 @@ return () => { cancelado = true; };
     } catch (error) { setAvisoAcceso({ type: 'error', message: error.message || 'Error al registrar el cliente.' }); }
   };
 
+  // ── Recuperación de contraseña ─────────────────────
+  // Pide el link por mail (POST /recuperar). No confirma si el mail existe:
+  // el backend responde siempre lo mismo para no filtrar qué cuentas hay.
+  const pedirRecuperacion = async (event) => {
+    event.preventDefault();
+    const mail = correoRecuperacion.trim();
+    if (!mail) { setAvisoAcceso({ type: 'error', message: 'Escribí el mail de tu cuenta.' }); return; }
+    try {
+      setAvisoAcceso({ type: 'idle', message: 'Enviando el link de recuperación...' });
+      const r = await solicitarRecuperacion(mail);
+      setAvisoAcceso({ type: 'success', message: r?.mensaje || 'Si el mail está registrado, te enviamos un link.' });
+    } catch (error) { setAvisoAcceso({ type: 'error', message: error.message || 'No pudimos enviar el link.' }); }
+  };
+
+  // Guarda la nueva contraseña con el token del link (POST /restablecer).
+  // Después limpia el token de la URL (para que un F5 no reenvíe un token ya
+  // usado) y vuelve al login con un mensaje de éxito.
+  const cambiarClave = async (event) => {
+    event.preventDefault();
+    if (!tokenRecuperacion) { setAvisoAcceso({ type: 'error', message: 'El link no es válido. Pedí uno nuevo.' }); return; }
+    if (claveNueva.length < 8) { setAvisoAcceso({ type: 'error', message: 'La contraseña tiene que tener al menos 8 caracteres.' }); return; }
+    try {
+      setAvisoAcceso({ type: 'idle', message: 'Guardando la nueva contraseña...' });
+      await restablecerPassword(tokenRecuperacion, claveNueva);
+      // history.replaceState borra el ?reset= sin recargar la página. El
+      // try/catch cubre navegadores que bloquean history (sandbox/incógnito).
+      try { history.replaceState(null, '', window.location.pathname); } catch {}
+      setTokenRecuperacion(''); setClaveNueva(''); setCorreoRecuperacion('');
+      setPantallaAcceso('ingreso');
+      setAvisoAcceso({ type: 'success', message: 'Contraseña actualizada. Iniciá sesión con tu nueva clave.' });
+    } catch (error) { setAvisoAcceso({ type: 'error', message: error.message || 'No pudimos cambiar la contraseña.' }); }
+  };
+
   // ── Reserva de turno ───────────────────────────────
   // Es el paso final del turnero. Re-valida todo por las dudas
   // (nombre+teléfono, cuenta vinculada a la DB, día habilitado, hora libre),
@@ -484,6 +620,8 @@ return () => { cancelado = true; };
       setAviso({ type: 'idle', message: 'Confirmando tu turno...' });
       await reservarTurno({ idCliente: currentUser.idCliente, idProfesional: profesionalSeleccionado, idServicio: servicioSeleccionado, fecha: fechaSeleccionada, horaInicio: horaSeleccionada, telefono: telefonoCliente.trim() }, token);
       setAviso({ type: 'success', message: `Turno confirmado para ${nombreCliente.trim()} con ${profesionalActual.name} (${servicioActual.name}, $${servicioActual.price.toLocaleString('es-AR')}) el ${fechaFormateada.label} ${fechaFormateada.date} a las ${horaSeleccionada}.` });
+      // Repone los campos con los datos del usuario logueado y limpia la hora
+      // elegida para no dejar seleccionado un slot que ya no está libre.
       setNombreCliente(currentUser?.name ?? ''); setTelefonoCliente(currentUser?.phone ?? ''); setHoraSeleccionada('');
       // Refresca todo lo afectado por la nueva reserva:
       cargarDisponibilidad(); refrescarOcupados(); if (currentUser?.role === 'admin') await cargarTurnosAdmin(); else await cargarMisTurnos();
@@ -699,13 +837,15 @@ return () => { cancelado = true; };
 
   // ── Render de pantallas ────────────────────────────
   // 1) SIN SESIÓN  → IniciarSesion (login/registro) + botón WhatsApp.
+  //    También si la URL trae ?reset=<token>: el link del mail tiene que
+  //    mostrar la pantalla de nueva contraseña aunque haya sesión abierta.
   // 2) CLIENTE (y aún cargando datos) → pantalla "Cargando datos...".
   // 3) ADMIN       → Admin.jsx con todos los handlers del panel.
   // 4) CLIENTE     → 'mis-turnos' → MisTurnos (historial y cancelación)
   //                  → 'cliente'     → Inicio (el turnero de 5 pasos)
-  if (!sesionIniciada) return (
+  if (!sesionIniciada || tokenRecuperacion) return (
     <>
-      <IniciarSesion pantallaAcceso={pantallaAcceso} avisoAcceso={avisoAcceso} ingresarConGoogle={ingresarConGoogle} iniciarSesion={iniciarSesion} crearCuenta={crearCuenta} correoIngreso={correoIngreso} claveIngreso={claveIngreso} onMostrarIngreso={() => setPantallaAcceso('ingreso')} onMostrarRegistro={() => setPantallaAcceso('registro')} formularioRegistro={formularioRegistro} setCorreoIngreso={setCorreoIngreso} setClaveIngreso={setClaveIngreso} setFormularioRegistro={setFormularioRegistro} />
+      <IniciarSesion pantallaAcceso={pantallaAcceso} avisoAcceso={avisoAcceso} ingresarConGoogle={ingresarConGoogle} iniciarSesion={iniciarSesion} crearCuenta={crearCuenta} pedirRecuperacion={pedirRecuperacion} cambiarClave={cambiarClave} correoIngreso={correoIngreso} claveIngreso={claveIngreso} correoRecuperacion={correoRecuperacion} claveNueva={claveNueva} onMostrarIngreso={() => setPantallaAcceso('ingreso')} onMostrarRegistro={() => setPantallaAcceso('registro')} onMostrarRecuperar={() => setPantallaAcceso('recuperar')} formularioRegistro={formularioRegistro} setCorreoIngreso={setCorreoIngreso} setClaveIngreso={setClaveIngreso} setCorreoRecuperacion={setCorreoRecuperacion} setClaveNueva={setClaveNueva} setFormularioRegistro={setFormularioRegistro} />
       <WhatsApp />
     </>
   );
@@ -733,6 +873,9 @@ return () => { cancelado = true; };
       </div>
       {errorCarga && (
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+          {/* Reintentar: limpia el aviso de error y sube el contador
+              intentoRecarga. El efecto de carga inicial depende de ese
+              contador, así que con tocarlo se vuelven a pedir los 6 datos. */}
           <button
             type="button"
             onClick={() => { setErrorCarga(''); setIntentoRecarga((n) => n + 1); }}
@@ -753,6 +896,8 @@ return () => { cancelado = true; };
   );
   return (
     <>
+      {/* Render principal: rol admin → panel de administración; si no, se mira
+          `vista` para alternar entre Mis turnos y el turnero del cliente. */}
       {currentUser?.role === 'admin' ? (
         <Admin todosProfesionales={todosProfesionales} profesionales={profesionales} turnos={turnosConfirmados} currentUser={currentUser} bloqueosPorFecha={bloqueosPorFecha} errorCarga={errorCarga} horarioLaboral={horarioLaboral} onRegistrarProfesional={registrarProfesional} onRegistrarServicio={registrarServicio} onBorrarProfesional={borrarProfesional} onBorrarTurno={borrarTurno} onBorrarServicio={borrarServicio} onCerrarSesion={cerrarSesion} onGuardarBloqueos={guardarBloqueosFecha} onGuardarHorarios={guardarHorariosSemanales} onCambiarActivoProfesional={cambiarActivoProfesional} onEditarProfesional={editarProfesional} onEditarTurno={editarTurno} onEditarServicio={editarServicio} servicios={servicios} horariosFijos={horariosFijos} />
       ) : vista === 'mis-turnos' ? (

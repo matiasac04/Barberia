@@ -1,4 +1,36 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   API_URL                   → L60
+//   peticion()                → L75
+//   registrarCliente()        → L118
+//   loginCliente()            → L122
+//   verificarToken()          → L125
+//   solicitarRecuperacion()   → L128
+//   restablecerPassword()     → L130
+//   obtenerProfesionales()    → L136
+//   crearProfesional()        → L138
+//   actualizarProfesional()   → L139
+//   eliminarProfesional()     → L140
+//   obtenerServicios()        → L144
+//   crearServicio()           → L145
+//   actualizarServicio()      → L146
+//   eliminarServicio()        → L147
+//   obtenerTurnosCliente()    → L151
+//   obtenerTurnos()           → L153
+//   obtenerTurnosDisponibles()-> L155
+//   obtenerTurnosOcupados()   → L158
+//   reservarTurno()           → L162
+//   cancelarTurno()           → L165
+//   actualizarTurno()         → L168
+//   eliminarTurno()           → L171
+//   obtenerBloqueos()         → L177
+//   obtenerHorarios()         → L179
+//   guardarBloqueos()         → L181
+//   guardarHorarios()         → L183
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // CAPA DE COMUNICACIÓN CON EL BACKEND (API REST)
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA ESTE MÓDULO?
@@ -41,6 +73,10 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 //     y le agrega .status = res.status (útil para 401/403/409/429)
 //   - Lanza excepción al llamador (quien decide cómo mostrar feedback)
 const peticion = async (path, { method = "GET", token, body, headers = {} } = {}) => {
+  // Los spreads arman los headers en orden: primero auth, después
+  // Content-Type y al final `headers` (los extras), que SIEMPRE pisan
+  // cualquier clave anterior por si el llamador necesita forzar algo
+  // (por ejemplo el Basic Auth del login, que va sin body).
   const h = { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}), ...headers };
   let res;
   try {
@@ -53,6 +89,9 @@ const peticion = async (path, { method = "GET", token, body, headers = {} } = {}
     err.status = 0;
     throw err;
   }
+  // .json() también puede fallar si la respuesta no es JSON (por ejemplo un
+  // proxy o Vercel devolviendo HTML de error): el catch la deja como {} para
+  // que el manejo de errores de abajo genere un mensaje genérico en vez de reventar.
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error(data.error || "Error en la solicitud al servidor.");
@@ -84,6 +123,11 @@ export const loginCliente = (email, password) => peticion("/login", { method: "P
 // verificarToken: pregunta al server si el token JWT sigue siendo válido
 // (se usa al abrir la app para saber si el usuario sigue logueado).
 export const verificarToken = (token) => peticion("/verificar", { token });
+// solicitarRecuperacion: pide por mail el link para restablecer la clave.
+// El backend responde lo mismo exista o no la cuenta (anti-enumeración).
+export const solicitarRecuperacion = (email) => peticion("/recuperar", { method: "POST", body: { email } });
+// restablecerPassword: cambia la clave con el token que vino en el link.
+export const restablecerPassword = (token, password) => peticion("/restablecer", { method: "POST", body: { token, password } });
 
 // ── Profesionales ─────────────────────────────────────
 // obtenerProfesionales: lista activa para el turnero; con incluirInactivos=true
@@ -112,9 +156,18 @@ export const obtenerTurnosDisponibles = (fecha, idProfesional, token) => peticio
 // obtenerTurnosOcupados: todos los turnos ocupados en un rango de fechas
 // (se usa para contar cuántos quedan libres por día en el inicio).
 export const obtenerTurnosOcupados = (inicio, fin, token) => peticion(`/turnos/ocupados?inicio=${encodeURIComponent(inicio)}&fin=${encodeURIComponent(fin)}`, { token });
+// reservarTurno: crea el turno (POST /turnos). El backend lo rechaza con 400
+// si el día está cerrado, si la fecha está fuera de la ventana de 30 días o
+// si la hora elegida ya pasó.
 export const reservarTurno = (datos, token) => peticion("/turnos", { method: "POST", token, body: datos });
+// cancelarTurno: usa PATCH /cancelar y NO DELETE porque la cancelación es
+// LÓGICA: el estado pasa a 'Cancelado' y el registro se conserva en la DB.
 export const cancelarTurno = (idTurno, token) => peticion(`/turnos/${idTurno}/cancelar`, { method: "PATCH", token });
+// actualizarTurno: edición parcial (fecha, hora, estado, datos del cliente);
+// solo los campos enviados en `datos` se modifican en la DB (comportamiento PATCH).
 export const actualizarTurno = (idTurno, datos, token) => peticion(`/turnos/${idTurno}`, { method: "PATCH", token, body: datos });
+// eliminarTurno: borrado FÍSICO (el registro desaparece de la DB, sin
+// confirmación en el backend). Uso exclusivo del panel de admin.
 export const eliminarTurno = (idTurno, token) => peticion(`/turnos/${idTurno}`, { method: "DELETE", token });
 
 // ── Bloqueos y horarios laborales ─────────────────────

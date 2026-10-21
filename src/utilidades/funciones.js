@@ -1,4 +1,30 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   formateadorFecha          → L54
+//   fechaAIso()               → L59
+//   esDiaCerrado()            → L70
+//   formatoFecha()            → L74
+//   patronDelDia()            → L83
+//   datosDelDia()             → L94
+//   MINUTOS_POR_SLOT          → L104
+//   DIAS_ATENCION             → L107
+//   patronADia                → L109
+//   horaAMinutos()            → L112
+//   minutosAHora()            → L117
+//   generarHorariosDelRango() → L122
+//   horariosDeLaSemana()      → L137
+//   fechaHoraDelTurno()       → L156
+//   sePuedeCancelar()         → L181
+//   estadoDelTurno()          → L194
+//   formatoCuentaRegresiva()  → L207
+//   filasDeBloqueo()          → L225
+//   bloqueosDeLaFecha()       → L234
+//   horariosPasados()         → L244
+//   horariosLibresDelDia()    → L258
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // UTILIDADES DE FECHAS, HORARIOS Y ESTADOS
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONAN ESTAS FUNCIONES?
@@ -31,6 +57,9 @@ const formateadorFecha = new Intl.DateTimeFormat('es-AR', { weekday: 'short', da
 // Si manda un string tipo '2026-10-24T...' se queda solo con la parte de la fecha.
 // Si la fecha no es válida devuelve '' (para no mostrar "NaN").
 export const fechaAIso = (value) => {
+  // La 'T00:00:00' es obligatoria: si le pasás 'YYYY-MM-DD' pelado a new Date(),
+  // JavaScript lo interpreta como medianoche UTC y en Argentina (UTC-3) el
+  // getDay()/getMonth() siguiente devolvería el día ANTERIOR.
   const d = value instanceof Date ? value : new Date(`${String(value).trim().split('T')[0]}T00:00:00`)
   if (Number.isNaN(d.getTime())) return ''
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -95,6 +124,8 @@ const generarHorariosDelRango = (start, end) => {
   const s = horaAMinutos(start)
   const e = horaAMinutos(end)
   if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return slots
+  // El <= (y no <) incluye la hora de CIERRE como último slot: si el rango es
+  // 09:00–12:00 se genera también el turno de las 12:00.
   for (let m = s; m <= e; m += MINUTOS_POR_SLOT) slots.push(minutosAHora(m))
   return slots
 }
@@ -105,6 +136,9 @@ const generarHorariosDelRango = (start, end) => {
 // usa horariosRespaldo (que suelen ser los horariosFijos de semilla.js).
 export const horariosDeLaSemana = (horarioLaboral, idProfesional, patronDia, horariosRespaldo) => {
   const diaJS = patronADia[patronDia]
+  // OJO con los tipos: el ID se compara como texto (String === String) y el
+  // día como número, porque la DB puede devolver cualquiera de los dos según
+  // la columna. Comparar 2 === '2' daría false y el horario se ignoraría.
   const rows = (Array.isArray(horarioLaboral) ? horarioLaboral : []).filter((r) =>
     String(r.idProfesional) === String(idProfesional) && Number(r.diaSemana) === diaJS &&
     r.horaEntrada != null && r.horaSalida != null
@@ -146,7 +180,9 @@ const fechaHoraDelTurno = (booking) => {
 // Se compara la fecha del turno contra ahora (más de 24h = 36e5 ms * 24).
 export const sePuedeCancelar = (booking) => {
   const dt = fechaHoraDelTurno(booking)
-  if (!dt) return false
+  if (!dt) return false  // sin fecha/hora parseable no se arriesga: se prohíbe cancelar
+  // 36e5 = 3.600.000 ms = 1 hora. El '>' es estricto: con EXACTAMENTE 24 h
+  // de antelación ya no se puede cancelar (tiene que faltar más de un día).
   return (dt.getTime() - Date.now()) / 36e5 > 24
 }
 
@@ -209,6 +245,8 @@ export const horariosPasados = (fecha, horarios, ahora = new Date()) => {
   const dateStr = String(fecha).trim().split('T')[0]
   if (dateStr !== fechaAIso(ahora)) return []
   const minAhora = ahora.getHours() * 60 + ahora.getMinutes()
+  // <= (y no <): si son las 10:00 exactas, el slot de las 10:00 ya no está
+  // disponible porque el turno empezaría en este mismo instante.
   return (Array.isArray(horarios) ? horarios : []).filter((s) => horaAMinutos(s) <= minAhora)
 }
 

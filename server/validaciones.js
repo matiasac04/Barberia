@@ -1,4 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   esFechaIsoValida(valor)           → L38
+//   errorFecha(valor)                 → L63
+//   esHoraValida(valor)               → L71
+//   errorHora(valor)                  → L82
+//   PASSWORD_MIN / PASSWORD_MAX_BYTES → L96
+//   errorPassword(valor)              → L99
+//   esIdValido(valor)                 → L114
+//   errorId(valor)                    → L127
+//   module.exports                    → L132
+// ═══════════════════════════════════════════════════════════════════
 //  validaciones.js — VALIDACIONES DE ENTRADA COMPARTIDAS
 //  ═══════════════════════════════════════════════════════════════════
 //  ¿POR QUÉ EXISTE ESTE ARCHIVO?
@@ -24,12 +36,20 @@
 // (necesario para el chequeo de ocupación), y la comparación depende de que
 // ambos lados tengan exactamente el mismo formato.
 const esFechaIsoValida = (valor) => {
+    // Guarda de tipos antes que nada: si el body manda un número u objeto
+    // (nadie lo validó antes), valor.trim() reventaría con un TypeError y el
+    // handler devolvería 500 "Error interno" en vez del 400 que corresponde.
     if (typeof valor !== "string") return false;
+    // trim() tolera espacios de más; el ^ y el $ obligan a que todo el string
+    // (ya recortado) sea exactamente la fecha, sin texto pegado al costado.
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor.trim());
     if (!m) return false;
     const anio = Number(m[1]);
     const mes = Number(m[2]);
     const dia = Number(m[3]);
+    // Chequeo de rango antes de armar el Date. El round-trip de abajo también
+    // agarraría un mes 13 o un día 40, pero cortar acá es más barato y deja
+    // el motivo a simple vista en el código.
     if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return false;
     // El round-trip es lo que detecta las fechas que NO existen, como el
     // 31/02: new Date(2026, 1, 31) no da error, "se corrige" solo al 03/03.
@@ -49,6 +69,8 @@ const errorFecha = (valor) =>
 // hora son TIME, y el chequeo de ocupación compara con = sobre ese string
 // normalizado. "9:00" o "09:00:00" romperían la comparación silenciosamente.
 const esHoraValida = (valor) => {
+    // Mismo guardia de tipos que en fechas: sin él, .trim() sobre un número
+    // u objeto tira TypeError y la ruta contesta 500 en vez de 400.
     if (typeof valor !== "string") return false;
     const m = /^(\d{2}):(\d{2})$/.exec(valor.trim());
     if (!m) return false;
@@ -75,6 +97,9 @@ const PASSWORD_MIN = 8;
 const PASSWORD_MAX_BYTES = 72;
 
 const errorPassword = (valor) => {
+    // `!valor` cubre la cadena vacía (y cualquier otro valor falsy que no sea
+    // string): "" no tiene con qué comparar contra PASSWORD_MIN, y decirle
+    // "Falta la contraseña" es más útil que "debe tener al menos 8 caracteres".
     if (typeof valor !== "string" || !valor) return "Falta la contraseña.";
     if (valor.length < PASSWORD_MIN) return `La contraseña debe tener al menos ${PASSWORD_MIN} caracteres.`;
     if (Buffer.byteLength(valor, "utf8") > PASSWORD_MAX_BYTES) return "La contraseña es demasiado larga.";
@@ -87,6 +112,11 @@ const errorPassword = (valor) => {
 // NaN que se pasa a .input(..., sql.Int, NaN) llega a la base como NULL, que en
 // una FK da un error 500 incomprensible en vez de un 404.
 const esIdValido = (valor) => {
+    // Number() convierte "3" (id de la URL) y 3 (id del body) a lo mismo, así
+    // el mismo helper sirve para los dos orígenes. Ojo con los casos borde que
+    // Number acepta: "" da 0 y [] da 0 — por eso el `n > 0`, que además deja
+    // afuera 0 y negativos (los ids de SQL arrancan en 1). isInteger corta los
+    // NaN de Number("3abc") y los decimales como 3.5.
     const n = Number(valor);
     return Number.isInteger(n) && n > 0;
 };

@@ -21,9 +21,23 @@
 // Si el servicio ya está en turnos viejos, la FK de SQL Server lo impide.
 // El error llega con number = 547. En vez de un 500 genérico, se devuelve un
 // 409 con un mensaje entendible ("hay turnos cargados con él").
+//
+// ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y endpoints (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   GET    /servicios      → L46   (público, sin token)
+//   POST   /servicios      → L64   (jwt + admin)
+//   PATCH  /servicios/:id  → L97   (jwt + admin)
+//   DELETE /servicios/:id  → L131  (jwt + admin)
+// ═══════════════════════════════════════════════════════════════════
 const router = require("express").Router();
 
+// `sql` aporta los tipos para parametrizar cada .input() y `getPool()` entrega
+// la conexión compartida a SQL Server.
 const { sql, getPool } = require("../conexion");
+// `jwtMiddleware` exige token válido en las rutas de escritura y `requireAdmin`
+// después deja pasar solo si el rol del token es "admin": son los dos candados
+// que separan la lectura pública de la edición.
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 
 // ── CRUD servicios ────────────────────────────────────
@@ -32,8 +46,13 @@ const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 router.get("/servicios", async (req, res) => {
   try {
     const db = await getPool();
+    // SELECT con las columnas explícitas (nada de SELECT *): el orden de la
+    // grilla del turnero depende de ORDER BY idServicio y el precio como
+    // DECIMAL viaja a JSON ya como número.
     const result = await db.request()
       .query("SELECT idServicio, nombre, precio, duracion_minutos FROM Servicio ORDER BY idServicio");
+    // result.recordset es el array de filas: se manda tal cual (sin envoltorio)
+    // y el frontend lo consume directo como lista.
     res.json(result.recordset);
   } catch (error) {
     console.error(error);
@@ -45,6 +64,8 @@ router.get("/servicios", async (req, res) => {
 router.post("/servicios", jwtMiddleware, requireAdmin, async (req, res) => {
   const { nombre, precio, duracion_minutos } = req.body;
   // Los tres campos son obligatorios.
+  // Ojo con precio: se compara con "== null" y no con "!precio" porque un
+  // precio de 0 es un valor legítimo y "!0" daría true (lo rechazaría de más).
   if (!nombre || precio == null || duracion_minutos == null) {
     return res.status(400).json({ error: "Nombre, precio y duración son obligatorios." });
   }
@@ -52,6 +73,8 @@ router.post("/servicios", jwtMiddleware, requireAdmin, async (req, res) => {
     const db = await getPool();
     // precio como DECIMAL(10,2) y duración como INT: los tipos los define
     // SQL Server, no el string que venga del body.
+    // Los .input() mandan cada valor como parámetro (@nombre, @precio...): la
+    // query nunca concatena texto del body, así que no hay inyección SQL.
     const result = await db.request()
       .input("nombre", sql.VarChar, nombre)
       .input("precio", sql.Decimal(10, 2), precio)
@@ -63,6 +86,8 @@ router.post("/servicios", jwtMiddleware, requireAdmin, async (req, res) => {
       `);
     res.status(201).json({ mensaje: "Servicio creado.", idServicio: result.recordset[0].idServicio });
   } catch (error) {
+    // Único logueo del error real; al cliente le llega solo el mensaje genérico
+    // para no filtrar datos internos de la base.
     console.error(error);
     res.status(500).json({ error: "Error al crear servicio." });
   }
@@ -77,12 +102,23 @@ router.patch("/servicios/:id", jwtMiddleware, requireAdmin, async (req, res) => 
   }
   try {
     const db = await getPool();
+    // `set` acumula los fragmentos "columna = @param" que realmente llegaron;
+    // `reqPatch` es UN solo request de mssql al que se le van agregando los
+    // .input() a medida que se agrega el fragmento. Así se ejecuta un único
+    // UPDATE parametrizado, no uno por campo.
     const set = [];
+    // El id viene de la URL como texto: sql.Int + el .input() lo convierten
+    // (si no fuera numérico, mssql lo pasa a NULL y el WHERE no matchea nada).
     const reqPatch = db.request().input("id", sql.Int, req.params.id);
     // Solo agrega al SET los campos que realmente llegaron.
+    // nombre/precio/duracion_minutos van con tipos distintos a propósito:
+    // VarChar, Decimal(10,2) e Int son los tipos reales de las columnas.
     if (nombre !== undefined) { set.push("nombre = @nombre"); reqPatch.input("nombre", sql.VarChar, nombre); }
     if (precio !== undefined) { set.push("precio = @precio"); reqPatch.input("precio", sql.Decimal(10, 2), precio); }
     if (duracion_minutos !== undefined) { set.push("duracion_minutos = @duracion"); reqPatch.input("duracion", sql.Int, duracion_minutos); }
+    // El UPDATE se arma con los fragmentos ya validados: la única parte
+    // dinámica son nombres de columna hardcodeados arriba (jamás texto del
+    // cliente), y los valores siguen viajando como parámetros.
     await reqPatch.query(`UPDATE Servicio SET ${set.join(", ")} WHERE idServicio = @id`);
     res.json({ mensaje: "Servicio actualizado." });
   } catch (error) {
@@ -95,14 +131,21 @@ router.patch("/servicios/:id", jwtMiddleware, requireAdmin, async (req, res) => 
 router.delete("/servicios/:id", jwtMiddleware, requireAdmin, async (req, res) => {
   try {
     const db = await getPool();
+    // Borrado físico real (DELETE), con WHERE por id: si el id no existe, la
+    // query no borra nada y no falla.
     const result = await db.request()
       .input("id", sql.Int, req.params.id)
       .query("DELETE FROM Servicio WHERE idServicio = @id");
     // rowsAffected[0] === 0 → el id no existía (404).
+    // Se chequea el número de filas afectadas porque un DELETE sobre una fila
+    // inexistente no lanza error: sin este chequeo respondería 200 sin haber
+    // borrado nada.
     if (result.rowsAffected[0] === 0) return res.status(404).json({ error: "Servicio no encontrado." });
     res.json({ mensaje: "Servicio eliminado." });
   } catch (error) {
     // 547 = violación de clave foránea: el servicio tiene turnos cargados.
+    // Se traduce ese código feo de SQL Server a un 409 con un mensaje que el
+    // admin entiende, en vez del 500 genérico.
     if (error?.number === 547) {
       return res.status(409).json({ error: "No se puede eliminar el servicio: hay turnos cargados con él." });
     }
@@ -111,4 +154,6 @@ router.delete("/servicios/:id", jwtMiddleware, requireAdmin, async (req, res) =>
   }
 });
 
+// El router se monta en index.js sin prefijo: los paths "/servicios" de acá
+// son las rutas reales de la API.
 module.exports = router;

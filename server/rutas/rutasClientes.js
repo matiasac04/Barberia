@@ -20,9 +20,19 @@
 // hora a 'HH:MM' — importante por la zona horaria y por el tipo (ver el
 // comentario de timezone en rutasTurnos.js: en crudo, tedious devuelve un TIME
 // como objeto Date y el frontend no lo puede leer). Ordena por fecha descendente.
+//
+// ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y endpoints (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   GET    /clientes/:idCliente/turnos  → L40   (jwt + idCliente del token)
+// ═══════════════════════════════════════════════════════════════════
 const router = require("express").Router();
 
+// `sql` (tipos) y `getPool()` (conexión compartida a SQL Server).
 const { sql, getPool } = require("../conexion");
+// Solo jwtMiddleware: la autorización de este archivo no es por rol (admin vs
+// cliente) sino por PROPIEDAD (que el token sea del mismo cliente de la URL),
+// y esa comparación se hace a mano dentro del handler.
 const { jwtMiddleware } = require("../autenticacion");
 
 // ── Turnos del cliente ────────────────────────────────
@@ -30,10 +40,15 @@ const { jwtMiddleware } = require("../autenticacion");
 router.get("/clientes/:idCliente/turnos", jwtMiddleware, async (req, res) => {
   try {
     // Autorización por propiedad: el token debe ser del MISMO cliente.
+    // Number(...) en los dos lados: req.user.idCliente viene del JWT como
+    // número y req.params.idCliente llega como string de la URL; sin convertir
+    // ambos, "4" !== 4 daría 403 siempre.
     if (Number(req.user.idCliente) !== Number(req.params.idCliente)) {
       return res.status(403).json({ error: "No tenés permiso para ver los turnos de otro cliente." });
     }
     const db = await getPool();
+    // El WHERE usa SÍ o SÍ el id del cliente validado arriba: a la base nunca
+    // llega otro idCliente que el del token (el de la URL ya coincidió).
     const result = await db.request()
       .input("idCliente", sql.Int, req.params.idCliente)
       .query(`
@@ -46,6 +61,9 @@ router.get("/clientes/:idCliente/turnos", jwtMiddleware, async (req, res) => {
         WHERE t.idCliente = @idCliente
         ORDER BY t.fecha DESC
       `);
+    // Array de filas con nombres ya resueltos + fecha/hora como texto 'HH:MM'
+    // y 'YYYY-MM-DD', que es lo que el frontend puede mostrar sin pelear con
+    // el tipo TIME de SQL Server.
     res.json(result.recordset);
   } catch (error) {
     console.error(error);
@@ -53,4 +71,6 @@ router.get("/clientes/:idCliente/turnos", jwtMiddleware, async (req, res) => {
   }
 });
 
+// El router se monta sin prefijo en index.js; el path completo de este
+// endpoint es /clientes/:idCliente/turnos.
 module.exports = router;

@@ -1,4 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y secciones (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   Resumen()             → L23
+//   return / render       → L24
+// ═══════════════════════════════════════════════════════════════════
 // RESUMEN OPERATIVO (admin) — tarjetas de conteo por estado
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
@@ -21,8 +26,9 @@ function Resumen({ opcionesEstado, conteoEstados }) {
       <h2>Resumen operativo</h2>
       <p className="admin-note">Desde este panel podés dar de alta profesionales y servicios, modificar turnos, cambiar su estado y revisar la agenda.</p>
       <div className="admin-status-grid">
+        {/* Itera en el mismo orden que opcionesEstado para mantener coherencia con el select de Turnos; 'Expirado' existe en conteoEstados pero no tiene tarjeta porque no está en opcionesEstado */}
         {opcionesEstado.map((s) => (
-          <div key={s.value} className="admin-status-card"><strong>{s.label}</strong><span>{conteoEstados[s.value] ?? 0} turnos</span></div>
+          <div key={s.value} className="admin-status-card">{/* Usa conteoEstados calculado por Admin.jsx (useMemo) para mostrar el total por estado sin recalcular acá */}<strong>{s.label}</strong><span>{conteoEstados[s.value] ?? 0} turnos</span></div>
         ))}
       </div>
     </article>

@@ -1,4 +1,24 @@
 // ═══════════════════════════════════════════════════════════════════
+// ÍNDICE DEL ARCHIVO — funciones y endpoints (línea exacta)
+// ═══════════════════════════════════════════════════════════════════
+//   inicioDeTurno()                → L111
+//   tieneMenosDe24h()              → L122
+//   horarioYaPaso()                → L132
+//   normalizarHora()               → L143
+//   aMinutos()                     → L161
+//   desdeMinutos()                 → L166
+//   slotsAtendiblesDelDia()        → L175
+//   estaBloqueado()                → L198
+//   avisarReservaPorMail()         → L211
+//   GET    /turnos/disponibles     → L245
+//   GET    /turnos/ocupados        → L280
+//   GET    /turnos                 → L322
+//   POST   /turnos                 → L370
+//   PATCH  /turnos/:id/cancelar    → L542
+//   PATCH  /turnos/:id             → L603
+//   DELETE /turnos/:id             → L739
+// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // server/rutas/rutasTurnos.js — TODA LA LÓGICA DE RESERVAS
 // ═══════════════════════════════════════════════════════════════════
 // ¿CÓMO FUNCIONA?
@@ -45,11 +65,22 @@
 // consulta que devuelve una hora la convierte con CONVERT(varchar(5), ..., 108)
 // → 'HH:MM'. Si agregás un SELECT que devuelva horaInicio u horaFin, hacelo
 // con CONVERT también.
+//
+// Router de Express: todos los endpoints de este archivo se cuelgan de él.
+// server/index.js lo registra con app.use(rutasTurnos) SIN prefijo, por eso
+// las rutas de abajo arrancan con "/turnos" y no con "/api/turnos".
 const router = require("express").Router();
 
+// Pool de conexiones a SQL Server + tipos (sql.Int, sql.Date, sql.VarChar…)
+// que se usan en cada .input() para que los parámetros viajen tipados.
 const { sql, getPool } = require("../conexion");
+// jwtMiddleware = token obligatorio; requireAdmin = token + rol 'admin'.
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
+// Validadores compartidos de fecha e id: cortan el request ANTES de tocar la
+// base (una fecha basura haría reventar la query y devolver 500).
 const { errorFecha, errorId } = require("../validaciones");
+// Mailing de confirmación (se dispara solo después de reservar) y helpers
+// de formato (fecha legible para el asunto del mail).
 const { enviarMail, htmlConfirmacionTurno, formatearFecha } = require("../mailer");
 
 // ── Regla de negocio: 24 h de antelación ─────────────
@@ -209,6 +240,8 @@ const avisarReservaPorMail = async (db, { idCliente, idProfesional, idServicio, 
 // Devuelve QUÉ horas están ocupadas, no las libres: el frontend las resta
 // de los horarios del día (ver availableSlots en App.jsx). Así la lógica de
 // "libres" está en un solo lado (el frontend), no partida en dos.
+// GET /turnos/disponibles - devuelve solo los HORARIOS OCUPADOS (no libres).
+// El frontend resta esos horarios de los slots del día para pintar lo libre.
 router.get("/turnos/disponibles", jwtMiddleware, async (req, res) => {
   const { fecha, idProfesional } = req.query;
   // Se validan ANTES de tocar la base. Antes no se chequeaba nada: con
@@ -221,11 +254,16 @@ router.get("/turnos/disponibles", jwtMiddleware, async (req, res) => {
   const errId = errorId(idProfesional);
   if (errId) return res.status(400).json({ error: errId });
   try {
+    // Obtiene pool de conexiones (reutilizable) para esta request.
     const db = await getPool();
+    // Busca turnos NO cancelados ese día para ese profesional.
+    // Se pasa sql.Date para tipar bien la comparación con columna DATE de SQL.
+    // Se convierten horaInicio/horaFin a varchar(5) 'HH:MM' para evitar el bug de TIME de tedious.
     const ocupados = await db.request()
       .input("idProfesional", sql.Int, Number(idProfesional))
       .input("fecha", sql.Date, fecha)
       .query("SELECT CONVERT(varchar(5), horaInicio, 108) AS horaInicio, CONVERT(varchar(5), horaFin, 108) AS horaFin FROM Turno WHERE idProfesional = @idProfesional AND fecha = @fecha AND (estado IS NULL OR estado <> 'Cancelado')");
+    // Devuelve tal como lo espera el frontend: fecha, idProfesional y lista de ocupados.
     res.json({ fecha, idProfesional: Number(idProfesional), turnosOcupados: ocupados.recordset });
   } catch (error) {
     console.error(error);
@@ -237,6 +275,8 @@ router.get("/turnos/disponibles", jwtMiddleware, async (req, res) => {
 // Trae TODOS los turnos de un rango de fechas. Es lo que usa el calendario
 // mensual para pintar cuántos horarios hay libres por día, sin pedir una
 // consulta por cada día (serían 30 requests en vez de 1).
+// GET /turnos/ocupados - trae TODOS los turnos NO cancelados entre inicio y fin.
+// Lo usa el calendario mensual para pintar el mes con una sola query.
 router.get("/turnos/ocupados", jwtMiddleware, async (req, res) => {
   const { inicio, fin } = req.query;
   // Misma validación que en /turnos/disponibles, por el mismo motivo.
@@ -251,12 +291,16 @@ router.get("/turnos/ocupados", jwtMiddleware, async (req, res) => {
   }
   // Y un rango acotado. Sin esto, un cliente puede pedir del año 1900 al 2999 y
   // volcar la agenda histórica entera en una sola respuesta.
+  // Se calcula en milisegundos / 86400000 para saber la cantidad de días.
   const dias = (new Date(`${fin}T00:00:00`) - new Date(`${inicio}T00:00:00`)) / 86400000;
   if (dias > 93) {
     return res.status(400).json({ error: "El rango es demasiado grande (máximo 3 meses)." });
   }
   try {
+    // Pool para consultar el rango.
     const db = await getPool();
+    // Trae idProfesional, fecha ISO (YYYY-MM-DD) y horaInicio 'HH:MM'.
+    // Solo NO cancelados: los cancelados NO ocupan horario.
     const ocupados = await db.request()
       .input("inicio", sql.Date, inicio)
       .input("fin", sql.Date, fin)
@@ -273,9 +317,15 @@ router.get("/turnos/ocupados", jwtMiddleware, async (req, res) => {
 // 3 JOINs para traer los nombres legibles (cliente, profesional, servicio)
 // y COALESCE para el teléfono: usa el del turno si se cargó, si no el de la
 // ficha del cliente. Ordena por fecha desc y hora asc.
+// GET /turnos - lista TODOS los turnos del local (solo admin).
+// Trae datos legibles con 3 JOINs y prefieren el teléfono del turno si existe.
 router.get("/turnos", jwtMiddleware, requireAdmin, async (req, res) => {
   try {
+    // Pool para armar la agenda completa del admin.
     const db = await getPool();
+    // Se convierten fecha a 'YYYY-MM-DD' y horaInicio a 'HH:MM'.
+    // COALESCE(t.telefono, c.telefono): usa el teléfono cargado en el turno,
+    // si no existe usa el de la ficha del cliente.
     const result = await db.request()
       .query(`
         SELECT t.idTurno, t.idCliente, t.idProfesional, t.idServicio, CONVERT(varchar(10), t.fecha, 23) AS fecha, CONVERT(varchar(5), t.horaInicio, 108) AS horaInicio, t.estado, t.precioTotal,
@@ -315,13 +365,18 @@ router.get("/turnos", jwtMiddleware, requireAdmin, async (req, res) => {
 // pero eso es solo UI: cualquiera puede llamar a la API a mano y meter un turno
 // en un horario que el admin bloqueó, fuera del horario del profesional, o con
 // un profesional dado de baja. La regla se tiene que cumplir en el servidor.
+// POST /turnos - reserva un turno (cliente). Muchas validaciones por seguridad.
+// Precio y duración se copian de Servicio (nunca confía en el body).
 router.post("/turnos", jwtMiddleware, async (req, res) => {
+  // Extrae campos del body.
   const { idCliente, idProfesional, idServicio, fecha, horaInicio, telefono } = req.body;
 
+  // 1) Campos obligatorios.
   if (!idCliente || !idProfesional || !idServicio || !fecha || !horaInicio) {
     return res.status(400).json({ error: "Cliente, profesional, servicio, fecha y horario son obligatorios." });
   }
 
+  // 2) Normalizar hora a 'HH:MM' una sola vez para todo lo de abajo.
   // La hora se normaliza una sola vez y se usa para TODO lo de abajo (validar
   // horario, chequear bloqueo, insertar): así no puede colarse un '9:0' que
   // en la base quedaría distinto de los horarios que compara la disponibilidad.
@@ -330,11 +385,12 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
     return res.status(400).json({ error: "El horario no tiene un formato válido (se espera HH:MM)." });
   }
 
-  // Solo puede reservar para sí mismo.
+  // 3) Solo puede reservar para sí mismo (el cliente del token debe coincidir).
   if (Number(req.user.idCliente) !== Number(idCliente)) {
     return res.status(403).json({ error: "No podés reservar un turno a nombre de otro cliente." });
   }
 
+  // 4) Validar fecha y obtener día de la semana ANTES de comparaciones.
   // Se valida la fecha ANTES de sacar el día de la semana: getDay() de una fecha
   // inválida devuelve NaN y las comparaciones de abajo no fallarían solas.
   const fechaObj = new Date(`${fecha}T00:00:00`);
@@ -342,24 +398,28 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
     return res.status(400).json({ error: "La fecha indicada no es válida." });
   }
   const diaNum = fechaObj.getDay();
+  // Ventana de reservas: hoy hasta +30 días (incluido).
   const hoyInicio = new Date(); hoyInicio.setHours(0, 0, 0, 0);
   const hoyFin = new Date(hoyInicio); hoyFin.setDate(hoyFin.getDate() + 30); hoyFin.setHours(23, 59, 59, 999);
+  // 5) Domingo (0) y lunes (1) cerrados.
   if (diaNum === 0 || diaNum === 1) {
     return res.status(400).json({ error: "No se pueden pedir turnos los domingos ni los lunes (cerrado)." });
   }
+  // 6) Fuera de ventana.
   if (fechaObj < hoyInicio || fechaObj > hoyFin) {
     return res.status(400).json({ error: "Solo se pueden pedir turnos desde hoy hasta dentro de un mes." });
   }
 
-  // No se puede reservar un horario que ya pasó. La UI los grisa, pero la API
-  // se defiende sola: cualquiera puede mandar un POST a mano.
+  // 7) No reservar horario ya pasado (defensa contra POST manual).
   if (horarioYaPaso(fecha, hora)) {
     return res.status(400).json({ error: "Ese horario ya pasó. Elegí uno más adelante." });
   }
 
   try {
+    // Pool para validar servicio/profesional/horarios.
     const db = await getPool();
 
+    // 8) Servicio debe existir y trae precio/duración reales (foto histórica).
     // El servicio tiene que existir (trae precio y duración REALES del
     // catálogo, no confía en el body). Va primero que las validaciones del
     // profesional para no hacer trabajo inútil con un servicio inexistente.
@@ -372,6 +432,7 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
     }
     const { duracion_minutos, precio } = servicio.recordset[0];
 
+    // 9) Profesional debe existir y estar ACTIVO (baja lógica).
     // El profesional tiene que existir y estar ACTIVO. La baja de un
     // profesional es lógica (activo = 0), así que la fila sigue ahí: sin este
     // check, un POST con el id de alguien dado de baja reservaría con un
@@ -386,17 +447,20 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
       return res.status(400).json({ error: "Ese profesional no está disponible para recibir reservas." });
     }
 
+    // 10) Hora debe estar dentro del horario laboral del profesional ese día.
     // La hora tiene que ser una de las que el profesional atiende ese día.
     const slots = await slotsAtendiblesDelDia(db, idProfesional, diaNum);
     if (!slots.includes(hora)) {
       return res.status(400).json({ error: "Ese horario está fuera del horario de atención del profesional." });
     }
 
+    // 11) No debe estar bloqueado por admin (puntual o día entero con hora NULL).
     // El admin pudo bloquear ese horario puntual o el día entero (hora NULL).
     if (await estaBloqueado(db, idProfesional, fecha, hora)) {
       return res.status(409).json({ error: "Ese horario está bloqueado. Elegí otro horario disponible." });
     }
 
+    // 12) Chequeo de ocupación + INSERT, EN UNA TRANSACCIÓN SERIALIZABLE
     // ── Chequeo de ocupación + INSERT, EN UNA TRANSACCIÓN SERIALIZABLE ──
     // Antes eran dos consultas sueltas y eso era una carrera: si dos clientes
     // confirmaban el mismo horario en el mismo instante, los dos leían "libre" y
@@ -406,19 +470,23 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
     // (Refuerzo ideal a futuro: un índice UNIQUE en
     //  (idProfesional, fecha, horaInicio) — ver BD/TurnosBarberia.sql.)
     const transaction = new sql.Transaction(db);
+    // Inicia transacción con nivel SERIALIZABLE para evitar race conditions.
     await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
     try {
+      // Vuelve a chequear ocupación DENTRO de la transacción (con lock).
       const ocupado = await new sql.Request(transaction)
         .input("idProfesional", sql.Int, idProfesional)
         .input("fecha", sql.Date, fecha)
         .input("horaInicio", sql.VarChar, hora)
         .query("SELECT idTurno FROM Turno WHERE idProfesional = @idProfesional AND fecha = @fecha AND horaInicio = @horaInicio AND (estado IS NULL OR estado <> 'Cancelado')");
 
+      // Si ya hay turno NO cancelado, hay doble intento → 409.
       if (ocupado.recordset.length > 0) {
         await transaction.rollback();
         return res.status(409).json({ error: "Ese horario ya fue reservado. Elegí otro horario disponible." });
       }
 
+      // 13) INSERT del turno. Guarda "foto" de precio/duración (histórico).
       // INSERT: guarda una "foto" del precio y la duración al momento de
       // reservar, por si después cambian en el catálogo (el turno histórico
       // no debe alterarse). estado arranca en 'Confirmado'.
@@ -438,16 +506,24 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
           VALUES (@idProfesional, @idCliente, @idServicio, @fecha, @horaInicio, @duracion, @precio, @telefono, @estado)
         `);
 
+      // Confirma transacción: todo ok.
       await transaction.commit();
-      res.status(201).json({ mensaje: "Turno reservado.", idTurno: result.recordset[0].idTurno });
 
-      // Se dispara DESPUÉS de responder y con catch propio: un fallo de Gmail
-      // (sin App Password, límite diario, caída) solo se loguea y nunca hace
-      // fallar la reserva, que ya está confirmada en la base.
-      avisarReservaPorMail(db, { idCliente, idProfesional, idServicio, fecha, hora })
-        .then(() => console.log("Mail de confirmación enviado."))
-        .catch((e) => console.error("No se pudo enviar el mail de confirmación:", e.message));
+      // 14) Enviar el mail ANTES de responder. En Vercel (serverless) la
+      // función puede congelarse apenas se envía la respuesta y el envío
+      // SMTP que quedó pendiente se pierde: esa era la causa de que el mail
+      // llegara "a veces". El try/catch mantiene el "mejor esfuerzo": si
+      // Gmail falla solo se loguea, porque la reserva ya está confirmada.
+      try {
+        await avisarReservaPorMail(db, { idCliente, idProfesional, idServicio, fecha, hora });
+        console.log("Mail de confirmación enviado.");
+      } catch (e) {
+        console.error("No se pudo enviar el mail de confirmación:", e.message);
+      }
+
+      res.status(201).json({ mensaje: "Turno reservado.", idTurno: result.recordset[0].idTurno });
     } catch (error) {
+      // Si algo falla adentro, revierte la transacción.
       try { await transaction.rollback(); } catch {}
       throw error;
     }
@@ -461,18 +537,23 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
 // PATCH /turnos/:id/cancelar — baja LÓGICA: NO borra la fila, solo pone
 // estado = 'Cancelado'. Así el turno queda en el historial pero libera el horario.
 // El admin puede cancelar cualquier turno; el cliente solo el suyo y con >24 h.
+// PATCH /turnos/:id/cancelar - baja LÓGICA: pone estado = 'Cancelado' (no borra la fila).
+// Así libera el horario y queda en historial. Admin puede hacerlo siempre, cliente solo con >24h.
 router.patch("/turnos/:id/cancelar", jwtMiddleware, async (req, res) => {
   try {
+    // Pool para leer turno y actualizar estado.
     const db = await getPool();
     // Trae el turno con la fecha y la hora YA como texto (CONVERT) para poder
     // aplicar la regla de las 24 h sin que corran un día/una hora por la zona
     // horaria (ver la nota de TIME en la cabecera de este archivo).
     const turno = await db.request()
+      // idTurno desde params.
       .input("id", sql.Int, req.params.id)
       .query("SELECT idCliente, CONVERT(varchar(10), fecha, 23) AS fecha, CONVERT(varchar(5), horaInicio, 108) AS horaIso FROM Turno WHERE idTurno = @id");
+    // Si no existe → 404.
     if (turno.recordset.length === 0) return res.status(404).json({ error: "Turno no encontrado." });
     const { idCliente, fecha, horaIso } = turno.recordset[0];
-    // Dueño del turno, o admin.
+    // Autorización: dueño del turno, o admin.
     if (req.user.role !== 'admin' && Number(req.user.idCliente) !== Number(idCliente)) {
       return res.status(403).json({ error: "No tenés permiso para cancelar este turno." });
     }
@@ -481,9 +562,11 @@ router.patch("/turnos/:id/cancelar", jwtMiddleware, async (req, res) => {
     if (req.user.role !== 'admin' && tieneMenosDe24h(fecha, horaIso)) {
       return res.status(400).json({ error: "No se puede cancelar con menos de 24 horas de antelación. Contactanos al local." });
     }
+    // Setea estado a 'Cancelado' (baja lógica).
     await db.request()
       .input("id", sql.Int, req.params.id)
       .query("UPDATE Turno SET estado = 'Cancelado' WHERE idTurno = @id");
+    // Responde ok.
     res.json({ mensaje: "Turno cancelado." });
   } catch (error) {
     console.error(error);
@@ -510,9 +593,18 @@ router.patch("/turnos/:id/cancelar", jwtMiddleware, async (req, res) => {
 // TRANSACCIÓN: el UPDATE del turno y el UPDATE opcional del cliente van
 // juntos. Si el segundo falla, se revierte el primero: no queda medio turno
 // actualizado a nombre de un cliente a medio cambiar.
+// PATCH /turnos/:id - editar / reprogramar (admin o el propio cliente).
+// Actualización PARCIAL. Reglas:
+// - Cliente solo puede tocar su propio turno, NUNCA puede cambiar 'estado'.
+// - Admin puede cambiar todo.
+// - Reprogramar con <24h se bloquea (mide sobre turno ACTUAL).
+// - Si se mueve fecha/hora/profesional se revalidan horarios, bloqueos, ocupación.
+// - Usa transacción SERIALIZABLE + chequeo de ocupación adentro para evitar doble reserva.
 router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
+  // Campos que pueden venir en body.
   const { idProfesional, idServicio, fecha, horaInicio, estado, nombreCliente, telefono } = req.body;
   try {
+    // Pool y lectura del turno actual (con fechas/horas en texto).
     const db = await getPool();
     const turno = await db.request()
       .input("id", sql.Int, req.params.id)
@@ -520,34 +612,27 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     if (turno.recordset.length === 0) return res.status(404).json({ error: "Turno no encontrado." });
     const turnoActual = turno.recordset[0];
     const idCliente = turnoActual.idCliente;
+    // Autorización: dueño o admin.
     if (req.user.role !== 'admin' && Number(req.user.idCliente) !== Number(idCliente)) {
       return res.status(403).json({ error: "No tenés permiso para editar este turno." });
     }
-    // El estado es campo exclusivo del admin.
+    // Solo admin puede cambiar estado.
     if (estado !== undefined && req.user.role !== 'admin') {
       return res.status(403).json({ error: "Solo el administrador puede cambiar el estado de un turno." });
     }
-    // Y tiene que ser uno de los que el frontend manda. Antes guardaba el
-    // estado en inglés y lo traducía con un mapa acá; ahora el frontend usa
-    // directo los valores de la DB (español), así que se valida contra ellos.
-    // Un estado inventado cuenta como "NO cancelado" en los cinco filtros
-    // `estado <> 'Cancelado'`: el horario quedaría bloqueado para siempre sin
-    // que nada lo explicara.
+    // Validar estados permitidos (valores en español que usa la DB/frontend).
     if (estado !== undefined) {
       const estadosValidos = ['Confirmado', 'Completado', 'NoSePresento', 'Cancelado'];
       if (!estadosValidos.includes(estado)) {
         return res.status(400).json({ error: "El estado indicado no es válido." });
       }
     }
-    // Reprogramar es tan "liberar el horario" como cancelar, así que lleva la
-    // misma antelación de 24 h. Se mide sobre el turno ACTUAL (el que se está
-    // por liberar), no sobre el nuevo: arrastrar un turno de la semana que
-    // viene a otra fecha no es una cancelación de último momento.
+    // Regla 24h al REPROGRAMAR: mide sobre turno ACTUAL, no sobre fecha nueva.
     if (req.user.role !== 'admin' && (fecha !== undefined || horaInicio !== undefined) && tieneMenosDe24h(turnoActual.fechaIso, turnoActual.horaIso)) {
       return res.status(400).json({ error: "No se puede reprogramar con menos de 24 horas de antelación. Contactanos al local." });
     }
 
-    // Si viene fecha nueva, se revalida como en la reserva.
+    // Si viene fecha nueva, revalidar como en reserva (cerrado/domingo+luna y ventana).
     if (fecha !== undefined) {
       const fechaObj = new Date(`${fecha}T00:00:00`);
       const diaNum = fechaObj.getDay();
@@ -561,61 +646,38 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       }
     }
 
-    // Para el chequeo de ocupación hay que resolver el destino FINAL:
-    // si no viene profesional, se usa el actual; si no, idProfesional.
+    // Resolver destino final (profesional/fecha/hora).
     const profFinal = idProfesional != null ? idProfesional : turnoActual.idProfesional;
-    // OJO: se usa fechaIso (el 'YYYY-MM-DD' del SELECT de arriba), NO
-    // turnoActual.fecha (que viene como objeto Date de SQL Server). Pasarle el
-    // Date crudo a .input("fecha", sql.Date, ...) dependía de que el driver lo
-    // serializara bien; con fechaIso la comparación es inequívoca.
+    // Usar fechaIso para evitar ambigüedad con Date crudo.
     const fechaFinal = fecha !== undefined ? fecha : turnoActual.fechaIso;
+    // Normalizar hora si viene nueva.
     const horaFinal = horaInicio !== undefined ? normalizarHora(horaInicio) : turnoActual.horaIso;
 
-    // Mismas dos validaciones que la reserva, para el cliente que reprograma:
-    // el destino tiene que ser un horario que el profesional atiende y que el
-    // admin no bloqueó. El admin queda exceptuado (es quien puede corregir la
-    // agenda a mano, incluso para acomodar a alguien fuera de horario).
-    // OJO: solo aplican si el cliente está moviendo fecha, hora o profesional;
-    // si solo cambia el teléfono o el nombre, el turno ya está en la base con
-    // un horario que el propio admin guardó y no hay nada que revalidar.
+    // Revalidar horarios/bloqueos/horarios pasados solo si cliente mueve fecha/hora/profesional.
+    // Si solo cambia teléfono/nombre no revalida (turno ya existe).
     if (req.user.role !== 'admin' && (fecha !== undefined || horaInicio !== undefined || idProfesional !== undefined)) {
       if (!horaFinal) return res.status(400).json({ error: "El horario no tiene un formato válido (se espera HH:MM)." });
-      // Mismo criterio que la reserva: el destino no puede ser un horario que
-      // ya pasó. El admin queda exceptuado, como con las demás validaciones.
+      // No permitir mover a horario ya pasado.
       if (horarioYaPaso(fechaFinal, horaFinal)) {
         return res.status(400).json({ error: "Ese horario ya pasó. Elegí uno más adelante." });
       }
+      // Debe estar dentro de horario laboral del profesional.
       const diaFinal = new Date(`${fechaFinal}T00:00:00`).getDay();
       const slotsFinal = await slotsAtendiblesDelDia(db, profFinal, diaFinal);
       if (!slotsFinal.includes(horaFinal)) {
         return res.status(400).json({ error: "Ese horario está fuera del horario de atención del profesional." });
       }
+      // Debe estar libre de bloqueo admin.
       if (await estaBloqueado(db, profFinal, fechaFinal, horaFinal)) {
         return res.status(409).json({ error: "Ese horario está bloqueado. Elegí otro horario disponible." });
       }
     }
 
-    // Arranca la transacción: desde acá, todo o nada.
-    // SERIALIZABLE (no el default READ COMMITTED) porque el chequeo de
-    // ocupación tiene que insepararse del UPDATE. Si el SELECT va afuera,
-    // entre que responde y se escribe el UPDATE se cuela otra request que
-    // pueda reservar o reprogramar al mismo horario, y las dos escriben.
-    // Es el mismo motivo y el mismo nivel que ya usa POST /turnos.
-    //
-    // OJO: acá NO debe quedar un chequeo de ocupación con db.request() antes
-    // del begin. Ya hubo un merge (b5ae99d) que lo reintrodujo desde la rama
-    // remota: como base y los dos lados "agregaban" el chequeo en lugares
-    // distintos (adentro de la transacción acá, afuera en el remoto), Git no
-    // pudo resolver que era un movimiento y dejó los dos. El de afuera hace
-    // return 409 antes de abrir la transacción, o sea que la carrera seguía
-    // existiendo y el chequeo de adentro nunca llegaba a correr. El chequeo
-    // válido es el de adentro, unas líneas más abajo.
+    // Transacción SERIALIZABLE para evitar race condition entre reprogramación/reserva.
     const transaction = new sql.Transaction(db);
     await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
     try {
-      // --- Chequeo de ocupación, ADENTRO de la transacción ---
-      // idTurno <> @id excluye este mismo turno, que si no siempre se
-      // chocaría consigo mismo al reprogramlo a su propio horario.
+      // Chequeo de ocupación ADENTRO de transacción (excluye este mismo turno).
       const ocupado = await new sql.Request(transaction)
         .input("idProfesional", sql.Int, profFinal)
         .input("fecha", sql.Date, fechaFinal)
@@ -627,35 +689,27 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
         return res.status(409).json({ error: "Ese horario ya fue reservado para ese profesional. Elegí otro horario disponible." });
       }
 
-      // --- Parte 1: UPDATE del turno (campos dinámicos) ---
+      // Parte 1: UPDATE dinámico de Turno.
       const set = [];
       const reqPatch = new sql.Request(transaction).input("id", sql.Int, req.params.id);
       if (idProfesional !== undefined) { set.push("idProfesional = @idProfesional"); reqPatch.input("idProfesional", sql.Int, idProfesional); }
       if (idServicio !== undefined) { set.push("idServicio = @idServicio"); reqPatch.input("idServicio", sql.Int, idServicio); }
       if (fecha !== undefined) { set.push("fecha = @fecha"); reqPatch.input("fecha", sql.Date, fecha); }
-      // Se guarda SIEMPRE normalizada a 'HH:MM' (horaFinal ya lo está): así
-      // la columna TIME queda con un único formato y las comparaciones de
-      // ocupación no dependen de cómo lo escribió el cliente.
+      // Guardar hora normalizada 'HH:MM' siempre.
       if (horaInicio !== undefined) { set.push("horaInicio = @horaInicio"); reqPatch.input("horaInicio", sql.VarChar, horaFinal); }
       if (estado !== undefined) {
-        // Se guarda el valor en español directo (los mismos de la DB).
-        // 'Expirado' no está: es un estado LÓGICO del frontend (turno que ya
-        // pasó), no algo que se guarde. Ya se validó arriba que el estado
-        // viene en la lista, así que se inserta tal cual.
+        // Valores en español tal como están en DB.
         set.push("estado = @estado");
         reqPatch.input("estado", sql.VarChar, estado);
       }
       if (set.length > 0) await reqPatch.query(`UPDATE Turno SET ${set.join(", ")} WHERE idTurno = @id`);
 
-      // --- Parte 2: UPDATE opcional del cliente ---
-      // Si el admin editó el nombre o el teléfono del turno, se propaga a la
-      // ficha del Cliente para que no se pierda la corrección.
+      // Parte 2: si admin editó nombre/telefono, propagar a ficha Cliente.
       if (idCliente != null && (nombreCliente !== undefined || telefono !== undefined)) {
         const cs = [];
         const cReq = new sql.Request(transaction).input("idCliente", sql.Int, idCliente);
         if (nombreCliente !== undefined) {
-          // Viene "Juan Pérez" pero la tabla guarda nombre y apellido sueltos:
-          // el primero es nombre, el resto es apellido.
+          // "Nombre Apellido..." -> nombre = primera palabra, apellido = resto.
           const partes = String(nombreCliente).trim().split(/\s+/);
           cs.push("nombre = @nombre", "apellido = @apellido");
           cReq.input("nombre", sql.VarChar, partes[0] ?? '');
@@ -668,10 +722,7 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       await transaction.commit();
       res.json({ mensaje: "Turno actualizado." });
     } catch (error) {
-      // Algo falló → se deshace todo y el error sube al catch de afuera.
-      // El try/catch del rollback es a propósito: rollback() RECHAZA si la
-      // transacción ya fue abortada, y sin esto esa excepción tapaba el error
-      // real en el log (quedaba el TransactionError en vez de la causa).
+      // Rollback seguro (si ya fue abortada la transacción, no tapa el error real).
       try { await transaction.rollback(); } catch {}
       throw error;
     }
@@ -684,15 +735,20 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
 // DELETE /turnos/:id — borrado FÍSICO (a diferencia de /cancelar, este
 // elimina la fila de verdad). Solo admin, sin regla de las 24 h: es una
 // corrección de agenda, no una cancelación del cliente.
+// DELETE /turnos/:id - borrado FÍSICO (elimina la fila). Solo admin, sin regla 24h.
 router.delete("/turnos/:id", jwtMiddleware, async (req, res) => {
   try {
+    // Solo admin puede borrar físicamente.
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: "Solo el administrador puede eliminar turnos." });
     }
+    // Pool para borrar.
     const db = await getPool();
+    // Borra por idTurno.
     const result = await db.request()
       .input("id", sql.Int, req.params.id)
       .query("DELETE FROM Turno WHERE idTurno = @id");
+    // Si no borró nada, no existía.
     if (result.rowsAffected[0] === 0) return res.status(404).json({ error: "Turno no encontrado." });
     res.json({ mensaje: "Turno eliminado." });
   } catch (error) {
