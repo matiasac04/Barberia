@@ -78,7 +78,7 @@ const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 // Validadores compartidos de fecha e id: cortan el request ANTES de tocar la
 // base (una fecha basura haría reventar la query y devolver 500).
-const { errorFecha, errorId } = require("../validaciones");
+const { errorFecha, errorId, errorTelefono } = require("../validaciones");
 // Mailing de confirmación (se dispara solo después de reservar) y helpers
 // de formato (fecha legible para el asunto del mail).
 const { enviarMail, htmlConfirmacionTurno, formatearFecha } = require("../mailer");
@@ -164,6 +164,46 @@ const aMinutos = (hora) => {
 };
 // desdeMinutos(570) -> '09:30'. Siempre con 2 dígitos.
 const desdeMinutos = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+// calcularHoraFin(horaInicio, duracionMinutos): devuelve 'HH:MM' del fin del
+// turno o '' si la duración no permite representarlo dentro del mismo día.
+// Sirve para comparar INTERVALOS [inicio, fin), no solo la hora de inicio.
+const calcularHoraFin = (horaInicio, duracionMinutos) => {
+  const duracion = Number(duracionMinutos);
+  if (!Number.isFinite(duracion) || duracion <= 0) return '';
+  const fin = aMinutos(horaInicio) + duracion;
+  if (fin >= 24 * 60) return '';
+  return desdeMinutos(fin);
+};
+
+// buscarSolapamiento(request, {...}): ¿hay otro turno NO cancelado del mismo
+// profesional que se superponga con [horaInicio, horaFin)?
+// Se comparan intervalos completos, no solo la hora de inicio: un turno de
+// 09:00 a 10:00 y otro a las 09:30 se superponen, aunque sus inicios sean
+// distintos. `excluirId` deja fuera el turno que se está editando.
+const buscarSolapamiento = async (request, { idProfesional, fecha, horaInicio, horaFin, excluirId }) => {
+  const req = request
+    .input("idProfesional", sql.Int, idProfesional)
+    .input("fecha", sql.Date, fecha)
+    .input("horaInicio", sql.VarChar, horaInicio)
+    .input("horaFin", sql.VarChar, horaFin);
+  let filtroExcluir = "";
+  if (excluirId != null) {
+    req.input("idExcluir", sql.Int, excluirId);
+    filtroExcluir = "AND idTurno <> @idExcluir";
+  }
+  const r = await req.query(`
+    SELECT idTurno
+    FROM Turno
+    WHERE idProfesional = @idProfesional
+      AND fecha = @fecha
+      AND (estado IS NULL OR estado <> 'Cancelado')
+      ${filtroExcluir}
+      AND horaInicio < CONVERT(time(0), @horaFin)
+      AND DATEADD(minute, ISNULL(duracionReal, ${SLOTS_POR_DIA}), horaInicio) > CONVERT(time(0), @horaInicio)
+  `);
+  return r.recordset.length > 0;
+};
 
 // slotsAtendiblesDelDia(db, idProfesional, diaSemana): los horarios que el
 // profesional realmente atiende ese día.
@@ -304,7 +344,7 @@ router.get("/turnos/ocupados", jwtMiddleware, async (req, res) => {
     const ocupados = await db.request()
       .input("inicio", sql.Date, inicio)
       .input("fin", sql.Date, fin)
-      .query("SELECT idProfesional, CONVERT(varchar(10), fecha, 23) AS fecha, CONVERT(varchar(5), horaInicio, 108) AS horaInicio FROM Turno WHERE fecha BETWEEN @inicio AND @fin AND (estado IS NULL OR estado <> 'Cancelado')");
+      .query("SELECT idProfesional, CONVERT(varchar(10), fecha, 23) AS fecha, CONVERT(varchar(5), horaInicio, 108) AS horaInicio, CONVERT(varchar(5), horaFin, 108) AS horaFin, duracionReal FROM Turno WHERE fecha BETWEEN @inicio AND @fin AND (estado IS NULL OR estado <> 'Cancelado')");
     res.json(ocupados.recordset);
   } catch (error) {
     console.error(error);
@@ -328,7 +368,7 @@ router.get("/turnos", jwtMiddleware, requireAdmin, async (req, res) => {
     // si no existe usa el de la ficha del cliente.
     const result = await db.request()
       .query(`
-        SELECT t.idTurno, t.idCliente, t.idProfesional, t.idServicio, CONVERT(varchar(10), t.fecha, 23) AS fecha, CONVERT(varchar(5), t.horaInicio, 108) AS horaInicio, t.estado, t.precioTotal,
+        SELECT t.idTurno, t.idCliente, t.idProfesional, t.idServicio, CONVERT(varchar(10), t.fecha, 23) AS fecha, CONVERT(varchar(5), t.horaInicio, 108) AS horaInicio, CONVERT(varchar(5), t.horaFin, 108) AS horaFin, t.duracionReal, t.estado, t.precioTotal,
                c.nombre + ' ' + c.apellido AS nombreCliente, c.email, COALESCE(t.telefono, c.telefono) AS telefono,
                p.nombre + ' ' + p.apellido AS profesional,
                s.nombre AS servicio
@@ -375,6 +415,19 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
   if (!idCliente || !idProfesional || !idServicio || !fecha || !horaInicio) {
     return res.status(400).json({ error: "Cliente, profesional, servicio, fecha y horario son obligatorios." });
   }
+
+  // 1.b) Los tres ids tienen que ser enteros positivos. Sin esto, un
+  // "idServicio": "3abc" llegaba a sql.Int como NULL y reventaba la FK (500).
+  for (const [campo, valor] of Object.entries({ idCliente, idProfesional, idServicio })) {
+    if (errorId(valor)) {
+      return res.status(400).json({ error: `El campo ${campo} no es un identificador válido.` });
+    }
+  }
+
+  // 1.c) Teléfono opcional, pero si viene solo puede tener dígitos.
+  const errTelefono = errorTelefono(telefono);
+  if (errTelefono) return res.status(400).json({ error: errTelefono });
+  const telefonoFinal = telefono == null ? null : String(telefono).trim() || null;
 
   // 2) Normalizar hora a 'HH:MM' una sola vez para todo lo de abajo.
   // La hora se normaliza una sola vez y se usa para TODO lo de abajo (validar
@@ -435,6 +488,14 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
     }
     const { duracion_minutos, precio } = servicio.recordset[0];
 
+    // La duración define el intervalo real del turno [hora, horaFin). Si el
+    // servicio tiene una duración inválida no se puede calcular el fin y la
+    // reserva se rechaza antes de tocar la agenda.
+    const horaFin = calcularHoraFin(hora, duracion_minutos);
+    if (!horaFin) {
+      return res.status(400).json({ error: "La duración del servicio no es válida para ese horario." });
+    }
+
     // 9) Profesional debe existir y estar ACTIVO (baja lógica).
     // El profesional tiene que existir y estar ACTIVO. La baja de un
     // profesional es lógica (activo = 0), así que la fila sigue ahí: sin este
@@ -476,17 +537,19 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
     // Inicia transacción con nivel SERIALIZABLE para evitar race conditions.
     await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
     try {
-      // Vuelve a chequear ocupación DENTRO de la transacción (con lock).
-      const ocupado = await new sql.Request(transaction)
-        .input("idProfesional", sql.Int, idProfesional)
-        .input("fecha", sql.Date, fecha)
-        .input("horaInicio", sql.VarChar, hora)
-        .query("SELECT idTurno FROM Turno WHERE idProfesional = @idProfesional AND fecha = @fecha AND horaInicio = @horaInicio AND (estado IS NULL OR estado <> 'Cancelado')");
+      // Vuelve a chequear superposición DENTRO de la transacción (con lock).
+      const haySolapamiento = await buscarSolapamiento(new sql.Request(transaction), {
+        idProfesional,
+        fecha,
+        horaInicio: hora,
+        horaFin,
+      });
 
-      // Si ya hay turno NO cancelado, hay doble intento → 409.
-      if (ocupado.recordset.length > 0) {
+      // Si el intervalo [hora, horaFin) se cruza con otro turno NO cancelado
+      // del mismo profesional, hay doble reserva → 409.
+      if (haySolapamiento) {
         await transaction.rollback();
-        return res.status(409).json({ error: "Ese horario ya fue reservado. Elegí otro horario disponible." });
+        return res.status(409).json({ error: "Ese horario se superpone con otro turno reservado. Elegí otro horario disponible." });
       }
 
       // 13) INSERT del turno. Guarda "foto" de precio/duración (histórico).
@@ -501,7 +564,7 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
         .input("horaInicio", sql.VarChar, hora)
         .input("duracion", sql.Int, duracion_minutos)
         .input("precio", sql.Decimal(10, 2), precio)
-        .input("telefono", sql.VarChar, telefono || null)
+        .input("telefono", sql.VarChar, telefonoFinal)
         .input("estado", sql.VarChar, 'Confirmado')
         .query(`
           INSERT INTO Turno (idProfesional, idCliente, idServicio, fecha, horaInicio, duracionReal, precioTotal, telefono, estado)
@@ -543,6 +606,10 @@ router.post("/turnos", jwtMiddleware, async (req, res) => {
 // PATCH /turnos/:id/cancelar - baja LÓGICA: pone estado = 'Cancelado' (no borra la fila).
 // Así libera el horario y queda en historial. Admin puede hacerlo siempre, cliente solo con >24h.
 router.patch("/turnos/:id/cancelar", jwtMiddleware, async (req, res) => {
+  // El id de la URL se valida antes de pasarlo a sql.Int: "abc" terminaba como
+  // NULL y la consulta devolvía "no encontrado" (o un 500) en vez de un 400.
+  const errId = errorId(req.params.id);
+  if (errId) return res.status(400).json({ error: errId });
   try {
     // Pool para leer turno y actualizar estado.
     const db = await getPool();
@@ -606,12 +673,28 @@ router.patch("/turnos/:id/cancelar", jwtMiddleware, async (req, res) => {
 router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
   // Campos que pueden venir en body.
   const { idProfesional, idServicio, fecha, horaInicio, estado, nombreCliente, telefono } = req.body;
+  // Validar el id de la URL ANTES de tocar la base.
+  const errIdUrl = errorId(req.params.id);
+  if (errIdUrl) return res.status(400).json({ error: errIdUrl });
+  // Y los ids que vengan en el body (si vienen).
+  if (idProfesional !== undefined && errorId(idProfesional)) {
+    return res.status(400).json({ error: "El campo idProfesional no es un identificador válido." });
+  }
+  if (idServicio !== undefined && errorId(idServicio)) {
+    return res.status(400).json({ error: "El campo idServicio no es un identificador válido." });
+  }
+  let telefonoFinal = telefono;
+  if (telefono !== undefined) {
+    const errTelefono = errorTelefono(telefono);
+    if (errTelefono) return res.status(400).json({ error: errTelefono });
+    telefonoFinal = telefono == null ? null : String(telefono).trim() || null;
+  }
   try {
     // Pool y lectura del turno actual (con fechas/horas en texto).
     const db = await getPool();
     const turno = await db.request()
       .input("id", sql.Int, req.params.id)
-      .query("SELECT idCliente, idProfesional, fecha, CONVERT(varchar(10), fecha, 23) AS fechaIso, CONVERT(varchar(5), horaInicio, 108) AS horaIso FROM Turno WHERE idTurno = @id");
+      .query("SELECT idCliente, idProfesional, idServicio, duracionReal, precioTotal, fecha, CONVERT(varchar(10), fecha, 23) AS fechaIso, CONVERT(varchar(5), horaInicio, 108) AS horaIso FROM Turno WHERE idTurno = @id");
     if (turno.recordset.length === 0) return res.status(404).json({ error: "Turno no encontrado." });
     const turnoActual = turno.recordset[0];
     const idCliente = turnoActual.idCliente;
@@ -660,12 +743,50 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
       }
     }
 
+    // Si cambia el servicio, se copia la "foto" nueva de precio y duración
+    // desde el catálogo. Antes solo se cambiaba idServicio: el turno quedaba
+    // con el precio y la duración del servicio ANTERIOR (total inconsistente y
+    // el cálculo de superposición usaba una duración equivocada).
+    let servicioCambio = false;
+    let duracionFinal = Number(turnoActual.duracionReal) > 0 ? Number(turnoActual.duracionReal) : SLOTS_POR_DIA;
+    let precioFinal = turnoActual.precioTotal;
+    // Solo se recalcula si el servicio CAMBIA de verdad. Si el admin manda el
+    // mismo idServicio (lo hace el form al guardar cualquier campo), se
+    // conserva la foto histórica de precio/duración del turno.
+    if (idServicio !== undefined && Number(idServicio) !== Number(turnoActual.idServicio)) {
+      const servicio = await db.request()
+        .input("idServicio", sql.Int, idServicio)
+        .query("SELECT precio, duracion_minutos FROM Servicio WHERE idServicio = @idServicio");
+      if (servicio.recordset.length === 0) {
+        return res.status(404).json({ error: "El servicio elegido no existe." });
+      }
+      duracionFinal = Number(servicio.recordset[0].duracion_minutos);
+      precioFinal = servicio.recordset[0].precio;
+      servicioCambio = true;
+    }
+
+    // Si se reasigna el profesional, tiene que existir (la FK lo frenaría con
+    // un 500; mejor un 404 explícito).
+    if (idProfesional !== undefined) {
+      const profesional = await db.request()
+        .input("id", sql.Int, idProfesional)
+        .query("SELECT idProfesional FROM Profesional WHERE idProfesional = @id");
+      if (profesional.recordset.length === 0) {
+        return res.status(404).json({ error: "El profesional elegido no existe." });
+      }
+    }
+
     // Resolver destino final (profesional/fecha/hora).
     const profFinal = idProfesional != null ? idProfesional : turnoActual.idProfesional;
     // Usar fechaIso para evitar ambigüedad con Date crudo.
     const fechaFinal = fecha !== undefined ? fecha : turnoActual.fechaIso;
     // Normalizar hora si viene nueva.
     const horaFinal = horaInicio !== undefined ? normalizarHora(horaInicio) : turnoActual.horaIso;
+    // Intervalo final [horaFinal, horaFinFinal) para el chequeo de superposición.
+    const horaFinFinal = calcularHoraFin(horaFinal, duracionFinal);
+    if (!horaFinFinal) {
+      return res.status(400).json({ error: "La duración del servicio no es válida para ese horario." });
+    }
 
     // Revalidar horarios/bloqueos/horarios pasados solo si cliente mueve fecha/hora/profesional.
     // Si solo cambia teléfono/nombre no revalida (turno ya existe).
@@ -690,23 +811,34 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
     const transaction = new sql.Transaction(db);
     await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
     try {
-      // Chequeo de ocupación ADENTRO de transacción (excluye este mismo turno).
-      const ocupado = await new sql.Request(transaction)
-        .input("idProfesional", sql.Int, profFinal)
-        .input("fecha", sql.Date, fechaFinal)
-        .input("horaInicio", sql.VarChar, horaFinal)
-        .input("id", sql.Int, req.params.id)
-        .query("SELECT idTurno FROM Turno WHERE idProfesional = @idProfesional AND fecha = @fecha AND horaInicio = @horaInicio AND idTurno <> @id AND (estado IS NULL OR estado <> 'Cancelado')");
-      if (ocupado.recordset.length > 0) {
+      // Chequeo de superposición ADENTRO de transacción (excluye este turno).
+      const haySolapamiento = await buscarSolapamiento(new sql.Request(transaction), {
+        idProfesional: profFinal,
+        fecha: fechaFinal,
+        horaInicio: horaFinal,
+        horaFin: horaFinFinal,
+        excluirId: req.params.id,
+      });
+      if (haySolapamiento) {
         await transaction.rollback();
-        return res.status(409).json({ error: "Ese horario ya fue reservado para ese profesional. Elegí otro horario disponible." });
+        return res.status(409).json({ error: "Ese horario se superpone con otro turno de ese profesional. Elegí otro horario disponible." });
       }
 
       // Parte 1: UPDATE dinámico de Turno.
       const set = [];
       const reqPatch = new sql.Request(transaction).input("id", sql.Int, req.params.id);
       if (idProfesional !== undefined) { set.push("idProfesional = @idProfesional"); reqPatch.input("idProfesional", sql.Int, idProfesional); }
-      if (idServicio !== undefined) { set.push("idServicio = @idServicio"); reqPatch.input("idServicio", sql.Int, idServicio); }
+      if (idServicio !== undefined) {
+        set.push("idServicio = @idServicio");
+        reqPatch.input("idServicio", sql.Int, idServicio);
+      }
+      // Al cambiar de servicio se actualiza también la foto de duración y
+      // precio (horaFin es columna calculada y se recalcula sola).
+      if (servicioCambio) {
+        set.push("duracionReal = @duracion", "precioTotal = @precio");
+        reqPatch.input("duracion", sql.Int, duracionFinal);
+        reqPatch.input("precio", sql.Decimal(10, 2), precioFinal);
+      }
       if (fecha !== undefined) { set.push("fecha = @fecha"); reqPatch.input("fecha", sql.Date, fecha); }
       // Guardar hora normalizada 'HH:MM' siempre.
       if (horaInicio !== undefined) { set.push("horaInicio = @horaInicio"); reqPatch.input("horaInicio", sql.VarChar, horaFinal); }
@@ -728,7 +860,7 @@ router.patch("/turnos/:id", jwtMiddleware, async (req, res) => {
           cReq.input("nombre", sql.VarChar, partes[0] ?? '');
           cReq.input("apellido", sql.VarChar, partes.slice(1).join(' ') || '');
         }
-        if (telefono !== undefined) { cs.push("telefono = @telefono"); cReq.input("telefono", sql.VarChar, telefono || null); }
+        if (telefono !== undefined) { cs.push("telefono = @telefono"); cReq.input("telefono", sql.VarChar, telefonoFinal); }
         if (cs.length > 0) await cReq.query(`UPDATE Cliente SET ${cs.join(", ")} WHERE idCliente = @idCliente`);
       }
 
@@ -755,6 +887,9 @@ router.delete("/turnos/:id", jwtMiddleware, async (req, res) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: "Solo el administrador puede eliminar turnos." });
     }
+    // Validar el id de la URL antes de usarlo en el WHERE.
+    const errId = errorId(req.params.id);
+    if (errId) return res.status(400).json({ error: errId });
     // Pool para borrar.
     const db = await getPool();
     // Borra por idTurno.

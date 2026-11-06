@@ -87,14 +87,37 @@ app.set("trust proxy", 1);
 // otros dominios. No hace falta configurarlo: esta API solo devuelve JSON, las
 // reglas estrictas (CSP) no aplican a páginas que nosotros no servimos.
 app.use(helmet());  // cabeceras de seguridad
-// cors() sin opciones deja que CUALQUIER origen llame a la API desde su
-// navegador (Access-Control-Allow-Origin: *). Es un trade-off deliberado: no
-// usamos cookies de sesión (el JWT viaja en el header Authorization, que el
-// navegador nunca manda solo), así que un sitio ajeno puede leer los GET
-// públicos, pero no puede hacer escrituras sin tener el token a mano. Si
-// algún día se pasa a cookies con credenciales, hay que restringir acá la
-// lista de orígenes permitidos.
-app.use(cors());    // CORS abierto (API pública de solo lectura + escritura con JWT)
+// Orígenes autorizados a llamar a la API desde un navegador. Antes cors() sin
+// opciones permitía CUALQUIER origen (*). Para el deploy de Vercel se mantiene
+// el comodín https://*.vercel.app (previews incluidos) y se puede pisar con la
+// variable CORS_ORIGINS separada por comas, por ejemplo:
+//   CORS_ORIGINS=https://mi-front.vercel.app,https://midominio.com
+// Los requests sin Origin (curl, health checks, mismo servidor) se permiten.
+const CORS_POR_DEFECTO = "http://localhost:*,http://127.0.0.1:*,https://*.vercel.app";
+const origenesPermitidos = String(process.env.CORS_ORIGINS || CORS_POR_DEFECTO)
+  .split(",")
+  .map((origen) => origen.trim())
+  .filter(Boolean);
+
+// Compara el patrón (admite "*" como comodín) contra el Origin recibido.
+const origenPermitido = (origen, patron) => {
+  if (patron === "*") return true;
+  const regex = new RegExp(`^${patron.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
+  return regex.test(origen);
+};
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    const permitido = origenesPermitidos.some((patron) => origenPermitido(origin, patron));
+    // false = no se agregan cabeceras CORS; el navegador bloquea la lectura.
+    callback(null, permitido);
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204,
+  maxAge: 86400,
+}));
 // express.json() convierte los bodies application/json en req.body. Va ANTES
 // de las rutas: sin él req.body quedaría undefined y todo POST/PATCH moriría.
 // Además limita el payload a 100 kB: un body gigante se rechaza con 413 en

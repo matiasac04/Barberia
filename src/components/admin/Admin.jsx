@@ -81,7 +81,7 @@ const leerPestanaDesdeHash = () => {
 const profesionalVacio = { id: '', name: '', email: '', telefono: '' };
 const servicioVacio = { id: '', name: '', price: '', duracion: '' };
 const crearFormularioTurno = (b) => ({
-  nombreCliente: b?.nombreCliente ?? '', telefonoCliente: b?.telefonoCliente ?? '', idProfesional: b?.idProfesional ?? '',
+  nombreCliente: b?.nombreCliente ?? '', telefonoCliente: String(b?.telefonoCliente ?? '').replace(/\D/g, ''), idProfesional: b?.idProfesional ?? '',
   idServicio: b?.idServicio ?? '', fecha: b?.fecha ?? '', hora: b?.hora ?? '', estado: b?.estado ?? 'Confirmado',
 });
 
@@ -168,6 +168,7 @@ function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueo
     e.preventDefault();
     if (!turnoSeleccionadoId) { setAviso({ type: 'error', message: 'No hay un turno seleccionado para editar.' }); return; }
     if (!formularioTurno.nombreCliente.trim() || !formularioTurno.telefonoCliente.trim()) { setAviso({ type: 'error', message: 'Completá nombre y celular del turno.' }); return; }
+    if (!/^[0-9]{6,20}$/.test(formularioTurno.telefonoCliente.trim())) { setAviso({ type: 'error', message: 'El teléfono debe contener solo números (entre 6 y 20 dígitos).' }); return; }
     // Llama a PATCH /turnos/:id vía onEditarTurno; recibe boolean
     const ok = await onEditarTurno(turnoSeleccionadoId, formularioTurno);
     setAviso(ok ? { type: 'success', message: 'Turno actualizado en la base de datos.' } : { type: 'error', message: 'No se pudo actualizar el turno. Revisá la conexión y que la sesión siga activa.' });
@@ -176,7 +177,7 @@ function Admin({ todosProfesionales, profesionales, turnos, currentUser, bloqueo
   // Turno seleccionado para el formulario de edición (usa id para mantener sincronización)
   const turnoSeleccionado = turnos.find((b) => b.id === turnoSeleccionadoId) ?? turnos[0] ?? null;
   // Carga registro en formulario para modo edición
-  const cargarProfesionalEnForm = (b) => setFormularioProfesional({ id: b.id, name: b.name, email: b.email ?? '', telefono: b.telefono ?? '' });
+  const cargarProfesionalEnForm = (b) => setFormularioProfesional({ id: b.id, name: b.name, email: b.email ?? '', telefono: String(b.telefono ?? '').replace(/\D/g, '') });
   const cargarServicioEnForm = (s) => setFormularioServicio({ id: s.id, name: s.name, price: String(s.price), duracion: s.durationMinutes != null ? String(s.durationMinutes) : '' });
   const cargarTurnoEnForm = (b) => { setTurnoSeleccionadoId(b.id); setFormularioTurno(crearFormularioTurno(b)); };
   return (

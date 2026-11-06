@@ -46,7 +46,15 @@ function Profesionales({ todosProfesionales, profesionales, formularioProfesiona
       <form className="admin-form" onSubmit={onGuardarProfesional}>
         <input type="text" placeholder="Nombre del profesional" value={formularioProfesional.name} onChange={(e) => onCambioFormularioProfesional((p) => ({ ...p, name: e.target.value }))} />
         <input type="email" placeholder="Email" value={formularioProfesional.email} onChange={(e) => onCambioFormularioProfesional((p) => ({ ...p, email: e.target.value }))} />
-        <input type="tel" placeholder="Teléfono" value={formularioProfesional.telefono} onChange={(e) => onCambioFormularioProfesional((p) => ({ ...p, telefono: e.target.value }))} />
+        <input
+          type="tel"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={20}
+          placeholder="Teléfono (solo números)"
+          value={formularioProfesional.telefono}
+          onChange={(e) => onCambioFormularioProfesional((p) => ({ ...p, telefono: e.target.value.replace(/\D/g, '') }))}
+        />
         <div className="admin-actions-row">
           {/* Botón guarda según modo (alta/edición) */}
           <button className="simple-submit" type="submit">{formularioProfesional.id ? 'Guardar cambios' : 'Agregar profesional'}</button>

@@ -53,7 +53,15 @@ function Turnos({ profesionales, formularioTurno, etiquetasEstado, clasesEstado,
           <div className="admin-inline-grid">
             {/* Datos del cliente */}
             <input type="text" placeholder="Nombre del cliente" value={formularioTurno.nombreCliente} onChange={(e) => onCambioFormularioTurno((p) => ({ ...p, nombreCliente: e.target.value }))} />
-            <input type="tel" placeholder="Celular" value={formularioTurno.telefonoCliente} onChange={(e) => onCambioFormularioTurno((p) => ({ ...p, telefonoCliente: e.target.value }))} />
+            <input
+              type="tel"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={20}
+              placeholder="Celular (solo números)"
+              value={formularioTurno.telefonoCliente}
+              onChange={(e) => onCambioFormularioTurno((p) => ({ ...p, telefonoCliente: e.target.value.replace(/\D/g, '') }))}
+            />
           </div>
           <div className="admin-inline-grid">
             {/* Profesional y servicio seleccionables para corregir asignación */}

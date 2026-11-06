@@ -9,7 +9,8 @@
 //   errorPassword(valor)              → L99
 //   esIdValido(valor)                 → L114
 //   errorId(valor)                    → L127
-//   module.exports                    → L132
+//   errorTelefono(valor)              → L139
+//   module.exports                    → L150
 // ═══════════════════════════════════════════════════════════════════
 //  validaciones.js — VALIDACIONES DE ENTRADA COMPARTIDAS
 //  ═══════════════════════════════════════════════════════════════════
@@ -126,12 +127,30 @@ const esIdValido = (valor) => {
 // idProfesional inválido respondía 500 por una excepción, no por el dato malo.
 const errorId = (valor) => (esIdValido(valor) ? null : "El identificador no es válido.");
 
+// ── Teléfonos ────────────────────────────────────────────
+//
+// El teléfono se guarda en VARCHAR(20). Antes solo se validaba la longitud:
+// "abc" entraba y quedaba guardado. Ahora se exige que sean solo dígitos,
+// entre 6 y 20 (un teléfono real no tiene 1 dígito, y 20 es el ancho de la
+// columna). Vacío/null sigue permitido: el campo es opcional en el registro.
+const TELEFONO_MIN = 6;
+const TELEFONO_MAX = 20;
+
+const errorTelefono = (valor) => {
+    if (valor == null || String(valor).trim() === "") return null;
+    const tel = String(valor).trim();
+    return new RegExp(`^[0-9]{${TELEFONO_MIN},${TELEFONO_MAX}}$`).test(tel)
+        ? null
+        : `El teléfono debe contener solo números (entre ${TELEFONO_MIN} y ${TELEFONO_MAX} dígitos).`;
+};
+
 // Solo se exportan los "error*": los booleanos (esFechaIsoValida, esHoraValida,
-// esIdValido) y las constantes (PASSWORD_MIN) se usan únicamente dentro de este
-// archivo; las rutas importan los mensajes listos.
+// esIdValido) y las constantes (PASSWORD_MIN, TELEFONO_MIN, TELEFONO_MAX) se
+// usan únicamente dentro de este archivo; las rutas importan los mensajes listos.
 module.exports = {
     errorFecha,
     errorHora,
     errorPassword,
     errorId,
+    errorTelefono,
 };

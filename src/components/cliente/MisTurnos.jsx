@@ -65,7 +65,7 @@ function MisTurnos({ calendarMax, calendarMin, sePuedeCancelar, currentUser, blo
                 const reprogramando = turnoAReprogramar === b.id;
                 // horariosLibres: solo se calcula si hay fecha elegida;
                 // devuelve los slots libres para ese barbero ese día.
-                const horariosLibres = fechaReprogramar ? horariosLibresDelDia(turnosOcupados, b.idProfesional, fechaReprogramar, horariosFijos, bloqueosPorFecha, horarioLaboral) : [];
+                const horariosLibres = fechaReprogramar ? horariosLibresDelDia(turnosOcupados, b.idProfesional, fechaReprogramar, horariosFijos, bloqueosPorFecha, horarioLaboral, b.duracion) : [];
                 return (
                   <div key={b.id} className="booking-item">
                     <div><strong>{b.nombreCliente}</strong><span>{b.nombreProfesional} · {b.nombreServicio} · {b.etiquetaDia} {b.fechaDia} · {b.hora}</span></div>
@@ -94,7 +94,7 @@ function MisTurnos({ calendarMax, calendarMin, sePuedeCancelar, currentUser, blo
                         {/* Calendario con el rango de reserva (hoy a +30).
                             Al cambiar la fecha se limpia la hora elegida
                             porque los horarios libres pueden variar. */}
-                        <Calendario selectedDate={fechaReprogramar} onSelectDate={(ds) => { setFechaReprogramar(ds); setHoraReprogramar(''); }} minDate={calendarMin} maxDate={calendarMax} totalSlots={horariosFijos.length} getFreeCount={(ds) => (esDiaCerrado(ds) ? null : horariosLibresDelDia(turnosOcupados, b.idProfesional, ds, horariosFijos, bloqueosPorFecha, horarioLaboral).length)} />
+                        <Calendario selectedDate={fechaReprogramar} onSelectDate={(ds) => { setFechaReprogramar(ds); setHoraReprogramar(''); }} minDate={calendarMin} maxDate={calendarMax} totalSlots={horariosFijos.length} getFreeCount={(ds) => (esDiaCerrado(ds) ? null : horariosLibresDelDia(turnosOcupados, b.idProfesional, ds, horariosFijos, bloqueosPorFecha, horarioLaboral, b.duracion).length)} />
                         <h4>Nuevo horario</h4>
                         {horariosLibres.length > 0 ? (
                           <div className="reschedule-slots">

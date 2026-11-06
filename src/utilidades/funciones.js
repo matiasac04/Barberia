@@ -109,12 +109,12 @@ export const DIAS_ATENCION = [2, 3, 4, 5, 6]
 const patronADia = { mar: 2, mie: 3, jue: 4, vie: 5, sab: 6 }
 
 // horaAMinutos('09:30') -> 570 (minutos desde las 00:00). Facilita las matemáticas.
-const horaAMinutos = (time) => {
+export const horaAMinutos = (time) => {
   const p = String(time).split(':').map(Number)
   return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0)
 }
 // minutosAHora(570) -> '09:30' (la vuelta a texto). Siempre con 2 dígitos.
-const minutosAHora = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
+export const minutosAHora = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
 
 // generarHorariosDelRango(start, end): genera la lista de horarios posibles
 // entre dos horas, saltando de 30 en 30. Ej.: '09:00'->'12:00' da
@@ -255,7 +255,7 @@ export const horariosPasados = (fecha, horarios, ahora = new Date()) => {
 // horario laboral (o respaldo) MENOS lo ocupado (turnosOcupados), los bloqueos
 // y los horarios de hoy que ya pasaron.
 // Los bloqueos de día completo hacen que la lista quede vacía.
-export const horariosLibresDelDia = (turnosOcupados, idProfesional, fecha, horariosFijos, bloqueosPorFecha, horarioLaboral) => {
+export const horariosLibresDelDia = (turnosOcupados, idProfesional, fecha, horariosFijos, bloqueosPorFecha, horarioLaboral, duracionMinutos = MINUTOS_POR_SLOT) => {
   const pat = patronDelDia(new Date(`${fecha}T00:00:00`))
   if (!pat) return []
   const daySlots = horariosDeLaSemana(horarioLaboral, idProfesional, pat, horariosFijos)
@@ -263,5 +263,18 @@ export const horariosLibresDelDia = (turnosOcupados, idProfesional, fecha, horar
   if (dateRows.some((r) => r.hora === null || r.hora === undefined || r.hora === '')) return []
   const dateKey = String(fecha).trim().split('T')[0]
   const blocked = new Set([...(turnosOcupados[idProfesional]?.[dateKey] ?? []), ...dateRows.map((r) => r.hora), ...horariosPasados(fecha, daySlots)])
-  return daySlots.filter((s) => !blocked.has(s))
+  const duracion = Number(duracionMinutos) > 0 ? Number(duracionMinutos) : MINUTOS_POR_SLOT
+  return daySlots.filter((s) => {
+    if (blocked.has(s)) return false
+    // El turno nuevo ocupa [s, s+duración). Si cualquiera de esos slots de 30'
+    // ya está ocupado/bloqueado, la hora de inicio no se puede ofrecer.
+    // turnosOcupados ya viene expandido a todos los slots que cubre cada turno.
+    if (duracion > MINUTOS_POR_SLOT) {
+      const inicio = horaAMinutos(s)
+      for (let m = inicio; m < inicio + duracion; m += MINUTOS_POR_SLOT) {
+        if (blocked.has(minutosAHora(m))) return false
+      }
+    }
+    return true
+  })
 }

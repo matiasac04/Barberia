@@ -34,10 +34,14 @@ const { sql, getPool } = require("../conexion");
 // cliente) sino por PROPIEDAD (que el token sea del mismo cliente de la URL),
 // y esa comparación se hace a mano dentro del handler.
 const { jwtMiddleware } = require("../autenticacion");
+// errorId convierte el :idCliente de la URL en un 400 claro si no es entero.
+const { errorId } = require("../validaciones");
 
 // ── Turnos del cliente ────────────────────────────────
 // GET /clientes/:idCliente/turnos — lista los turnos del cliente logueado.
 router.get("/clientes/:idCliente/turnos", jwtMiddleware, async (req, res) => {
+  const errId = errorId(req.params.idCliente);
+  if (errId) return res.status(400).json({ error: errId });
   try {
     // Autorización por propiedad: el token debe ser del MISMO cliente.
     // Number(...) en los dos lados: req.user.idCliente viene del JWT como
@@ -52,7 +56,7 @@ router.get("/clientes/:idCliente/turnos", jwtMiddleware, async (req, res) => {
     const result = await db.request()
       .input("idCliente", sql.Int, req.params.idCliente)
       .query(`
-        SELECT t.idTurno, CONVERT(varchar(10), t.fecha, 23) AS fecha, CONVERT(varchar(5), t.horaInicio, 108) AS horaInicio, t.estado, t.precioTotal, t.idProfesional,
+        SELECT t.idTurno, CONVERT(varchar(10), t.fecha, 23) AS fecha, CONVERT(varchar(5), t.horaInicio, 108) AS horaInicio, CONVERT(varchar(5), t.horaFin, 108) AS horaFin, t.duracionReal, t.estado, t.precioTotal, t.idProfesional, t.idServicio,
                p.nombre + ' ' + p.apellido AS profesional,
                s.nombre AS servicio
         FROM Turno t

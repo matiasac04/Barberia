@@ -60,7 +60,7 @@ const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, JWT_SECRET } = require("../autenticacion");
 // `errorPassword` aplica las reglas de fortaleza en el registro (mínimo 8
 // caracteres y tope de 72 BYTES, que es donde bcrypt.js corta el texto).
-const { errorPassword } = require("../validaciones");
+const { errorPassword, errorTelefono } = require("../validaciones");
 // `enviarMail` manda el correo por Gmail y `htmlRecuperacionPassword` arma el
 // HTML del link de recuperación (ver server/mailer.js).
 const { enviarMail, htmlRecuperacionPassword } = require("../mailer");
@@ -133,9 +133,11 @@ router.post("/registro", async (req, res) => {
     if (String(nombre).length > 100 || String(apellido).length > 100) {
       return res.status(400).json({ error: "Nombre y apellido no pueden superar los 100 caracteres." });
     }
-    if (telefono != null && String(telefono).length > 20) {
-      return res.status(400).json({ error: "El teléfono no puede superar los 20 caracteres." });
-    }
+    // El teléfono se guarda en VARCHAR(20). Además del tope de longitud, se
+    // exige que sean solo dígitos: antes "abc" pasaba y quedaba guardado.
+    const errTelefono = errorTelefono(telefono);
+    if (errTelefono) return res.status(400).json({ error: errTelefono });
+    const telefonoFinal = telefono == null ? null : String(telefono).trim() || null;
 
     // ¿Ya existe una cuenta con ese email? (unicidad)
     // SELECT mínimo (solo el id) sobre la tabla Cliente con WHERE por el mail
@@ -161,7 +163,7 @@ router.post("/registro", async (req, res) => {
       .input("nombre", sql.VarChar, nombre)
       .input("apellido", sql.VarChar, apellido)
       .input("email", sql.VarChar, emailFinal)
-      .input("telefono", sql.VarChar, telefono || null)
+      .input("telefono", sql.VarChar, telefonoFinal)
       .input("password", sql.VarChar, passwordHash)
       .query(`
         INSERT INTO Cliente (nombre, apellido, email, telefono, password)

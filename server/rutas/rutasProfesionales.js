@@ -58,7 +58,7 @@ const { sql, getPool } = require("../conexion");
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
 // Helpers de formato reutilizados: errorHora valida 'HH:MM' y errorFecha
 // 'AAAA-MM-DD' antes de que el dato llegue a la base.
-const { errorFecha, errorHora } = require("../validaciones");
+const { errorId, errorFecha, errorHora, errorTelefono } = require("../validaciones");
 
 // ── Helpers de profesionales ──────────────────────────
 // generarEmailProfesional(): email interno válido y único para cuando el
@@ -110,6 +110,10 @@ router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
   if (!nombre || !String(nombre).trim()) {
     return res.status(400).json({ error: "El nombre del profesional es obligatorio." });
   }
+  // Teléfono opcional, pero si viene solo puede tener dígitos.
+  const errTelefono = errorTelefono(telefono);
+  if (errTelefono) return res.status(400).json({ error: errTelefono });
+  const telefonoFinal = telefono == null ? null : String(telefono).trim() || null;
   try {
     const db = await getPool();
     // Apellido vacío o con espacios → null (mejor null que "" para que el
@@ -117,13 +121,12 @@ router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
     const apellidoFinal = apellido && String(apellido).trim() ? String(apellido).trim() : null;
     // Si no hay email → generado. Si hay → el que cargó el admin.
     const emailFinal = normalizarEmailOpcional(email) || generarEmailProfesional();
-    // telefono || null: si viene vacío se guarda NULL en vez de "", así el
-    // campo queda limpio para los chequeos de longitud.
+    // telefonoFinal: vacío se guarda NULL (no "") y ya viene sin espacios.
     const result = await db.request()
       .input("nombre", sql.VarChar, String(nombre).trim())
       .input("apellido", sql.VarChar, apellidoFinal)
       .input("email", sql.VarChar, emailFinal)
-      .input("telefono", sql.VarChar, telefono || null)
+      .input("telefono", sql.VarChar, telefonoFinal)
       .query(`
         INSERT INTO Profesional (nombre, apellido, email, telefono)
         OUTPUT INSERTED.idProfesional
@@ -148,6 +151,8 @@ router.post("/profesionales", jwtMiddleware, requireAdmin, async (req, res) => {
 // DELETE /profesionales/:id — BAJA LÓGICA (solo admin): activo = 0.
 // No borra la fila (ver el punto 1 de la cabecera).
 router.delete("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res) => {
+  const errId = errorId(req.params.id);
+  if (errId) return res.status(400).json({ error: errId });
   try {
     const db = await getPool();
     // El "DELETE" en realidad es un UPDATE de la bandera activo: nunca se borra
@@ -169,6 +174,8 @@ router.delete("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res
 // (el admin manda { activo: true/false }). Mismo patrón de SET dinámico que
 // servicios. Si no viene ningún campo → 400.
 router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res) => {
+  const errId = errorId(req.params.id);
+  if (errId) return res.status(400).json({ error: errId });
   try {
     const db = await getPool();
     // El id de la URL se convierte a Number y viaja como sql.Int en cada
@@ -189,9 +196,11 @@ router.patch("/profesionales/:id", jwtMiddleware, requireAdmin, async (req, res)
       reqPatch.input("apellido", sql.VarChar, req.body.apellido && String(req.body.apellido).trim() ? String(req.body.apellido).trim() : null);
     }
     if (req.body.telefono !== undefined) {
-      // telefono || null: vacío se guarda como NULL.
+      // Teléfono opcional, pero si viene solo puede tener dígitos. Vacío → NULL.
+      const errTelefono = errorTelefono(req.body.telefono);
+      if (errTelefono) return res.status(400).json({ error: errTelefono });
       set.push("telefono = @telefono");
-      reqPatch.input("telefono", sql.VarChar, req.body.telefono || null);
+      reqPatch.input("telefono", sql.VarChar, req.body.telefono == null ? null : String(req.body.telefono).trim() || null);
     }
     if (req.body.email !== undefined) {
       // El email tiene un caso especial: si el admin lo borra (viene vacío),
@@ -261,6 +270,8 @@ router.get("/horarios", jwtMiddleware, async (req, res) => {
 // nueva. Si un INSERT falla a la mitad → rollback y no queda un horario
 // híbrido (mitad viejo, mitad nuevo).
 router.put("/profesionales/:id/horarios", jwtMiddleware, requireAdmin, async (req, res) => {
+  const errId = errorId(req.params.id);
+  if (errId) return res.status(400).json({ error: errId });
   const { horarios } = req.body;
   // Tiene que ser un array: si no, no hay forma de reemplazar nada.
   if (!Array.isArray(horarios)) return res.status(400).json({ error: "Falta la lista de horarios." });
@@ -386,6 +397,8 @@ router.get("/bloqueos", jwtMiddleware, async (req, res) => {
 // Siempre borra primero las de esa fecha, así el admin puede "desbloquear
 // todo" mandando slots: [] sin borrar filas a mano. Va en transacción.
 router.post("/profesionales/:id/bloqueos", jwtMiddleware, requireAdmin, async (req, res) => {
+  const errId = errorId(req.params.id);
+  if (errId) return res.status(400).json({ error: errId });
   // "|| {}" evita un TypeError si el body llegó vacío: así fecha queda
   // undefined y salta el 400 de la línea de abajo en vez de romper.
   const { fecha, diaCompleto, slots } = req.body || {};

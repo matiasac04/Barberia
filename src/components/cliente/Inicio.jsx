@@ -95,10 +95,13 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
   // diaCerrado: true si el día elegido es domingo o lunes (App.jsx garantiza
   // que esos días están cerrados; acá solo se muestra el aviso).
   const diaCerrado = diaActual.id === 'dom';
+  // Duración del servicio elegido: un turno de 60' ocupa dos slots de 30'.
+  // Se usa para no contar/ofertar horas que se solaparían con otro turno.
+  const duracionSeleccionada = Number(servicioActual?.durationMinutes) > 0 ? Number(servicioActual.durationMinutes) : 30;
   // cantidadLibres: cuenta cuántos horarios libres le quedan a cada barbero
   // en el día seleccionado; se muestra como subtítulo en cada chip del paso 3.
   // Si el día está cerrado, devuelve 0 sin calcular.
-  const cantidadLibres = (bid) => (diaCerrado ? 0 : horariosLibresDelDia(turnosOcupados, bid, fechaSeleccionada, horariosFijos, bloqueosPorFecha, horarioLaboral).length);
+  const cantidadLibres = (bid) => (diaCerrado ? 0 : horariosLibresDelDia(turnosOcupados, bid, fechaSeleccionada, horariosFijos, bloqueosPorFecha, horarioLaboral, duracionSeleccionada).length);
   // ── Render de la pantalla ─────────────────────────
   return (
     <main className="simple-page">
@@ -184,7 +187,7 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
               día la cantidad de horarios libres para colorearlo. */}
           <div className={`simple-group step-panel${pasoActual === 2 ? ' is-active' : ''}`} data-step="2">
             <div className="step-label"><span className="step-badge">2</span><label>Elegí el día</label></div>
-            <Calendario selectedDate={fechaSeleccionada} onSelectDate={setFechaSeleccionada} minDate={diaCalendarMin} maxDate={diaCalendarMax} totalSlots={horariosDelDia.length} getFreeCount={(ds) => (esDiaCerrado(ds) ? null : horariosLibresDelDia(turnosOcupados, profesionalSeleccionado, ds, horariosFijos, bloqueosPorFecha, horarioLaboral).length)} />
+            <Calendario selectedDate={fechaSeleccionada} onSelectDate={setFechaSeleccionada} minDate={diaCalendarMin} maxDate={diaCalendarMax} totalSlots={horariosDelDia.length} getFreeCount={(ds) => (esDiaCerrado(ds) ? null : horariosLibresDelDia(turnosOcupados, profesionalSeleccionado, ds, horariosFijos, bloqueosPorFecha, horarioLaboral, duracionSeleccionada).length)} />
             <p className="calendar-hint">Cada día muestra cuántos horarios quedan libres. Los domingos y lunes están cerrados.</p>
             {/* Se puede volver al paso 1 o avanzar al paso 3. */}
             <BarraPasos onPrev={() => irAlPaso(1)} onNext={() => irAlPaso(3)} />
@@ -239,7 +242,15 @@ function Inicio({ horariosLibres, profesionales, profesionalActual, servicioActu
             <div className="step-label"><span className="step-badge">5</span><label>Completá tus datos y confirmá</label></div>
             <form className="simple-form" onSubmit={registrarTurno}>
               <input type="text" placeholder="Nombre y apellido" value={nombreCliente} onChange={(e) => setNombreCliente(e.target.value)} />
-              <input type="tel" placeholder="Celular (ej. 11 5555-1234)" value={telefonoCliente} onChange={(e) => setTelefonoCliente(e.target.value)} />
+              <input
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={20}
+                placeholder="Celular (solo números)"
+                value={telefonoCliente}
+                onChange={(e) => setTelefonoCliente(e.target.value.replace(/\D/g, ''))}
+              />
               {/* disabled mientras enviando evita doble submit; el texto
                   cambia a "Confirmando..." para feedback al usuario. */}
               <button className="simple-submit" type="submit" disabled={enviando}>{enviando ? 'Confirmando...' : 'Confirmar turno'}</button>

@@ -101,7 +101,7 @@ import { horariosFijos } from './datos/semilla';
 // Funciones de la API (todas las llamadas al backend, ver src/servicios/api.js):
 import { actualizarProfesional, actualizarServicio, actualizarTurno, cancelarTurno, crearProfesional, crearServicio, eliminarProfesional, eliminarServicio, eliminarTurno, guardarBloqueos, guardarHorarios, loginCliente, obtenerBloqueos, obtenerHorarios, obtenerProfesionales, obtenerServicios, obtenerTurnos, obtenerTurnosCliente, obtenerTurnosDisponibles, obtenerTurnosOcupados, registrarCliente, reservarTurno, restablecerPassword, solicitarRecuperacion, verificarToken } from './servicios/api';
 // Utilidades de fechas/horarios/estados (ver src/utilidades/funciones.js):
-import { sePuedeCancelar, formatoFecha, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, horariosPasados, esDiaCerrado, estadoDelTurno, datosDelDia, fechaAIso } from './utilidades/funciones';
+import { sePuedeCancelar, formatoFecha, bloqueosDeLaFecha, patronDelDia, horariosDeLaSemana, horariosPasados, esDiaCerrado, estadoDelTurno, datosDelDia, fechaAIso, horaAMinutos, minutosAHora } from './utilidades/funciones';
 
 // ── Constantes de calendario ─────────────────────────
 // Ventana de reservas: de HOY (0:00) hasta HOY + 30 días (23:59:59).
@@ -217,7 +217,7 @@ function App() {
   // Pre-carga el nombre y teléfono del cliente logueado en el formulario.
   // Depende de [currentUser]: se re-dispara al loguearse o cambiar de usuario,
   // así los campos quedan llenos con sus datos sin escribirlos a mano.
-  useEffect(() => { setNombreCliente(currentUser?.name ?? ''); setTelefonoCliente(currentUser?.phone ?? ''); }, [currentUser]);
+  useEffect(() => { setNombreCliente(currentUser?.name ?? ''); setTelefonoCliente(String(currentUser?.phone ?? '').replace(/\D/g, '')); }, [currentUser]);
 
   // ── Sesión y autenticación ───────────────────────
   // Expulsa al usuario: limpia estado + localStorage y vuelve al login.
@@ -350,18 +350,45 @@ function App() {
     return `${p[0].padStart(2, '0')}:${p[1].padStart(2, '0')}`;
   }, []);
 
+  // finDelTurno(inicio, horaFin, duracion): devuelve la hora de fin en 'HH:MM'.
+  // Prefiere el horaFin que ya calcula el backend; si no vino (turnos viejos),
+  // lo reconstruye sumando duracionReal (o 30 min como respaldo).
+  const finDelTurno = useCallback((inicio, horaFin, duracion) => {
+    const fin = normalizarHoraApi(horaFin);
+    if (fin) return fin;
+    const ini = normalizarHoraApi(inicio);
+    if (!ini) return '';
+    const dur = Number(duracion) > 0 ? Number(duracion) : 30;
+    return minutosAHora(horaAMinutos(ini) + dur);
+  }, [normalizarHoraApi]);
+
+  // horasDelIntervalo('09:00', '10:00'): ['09:00', '09:30']. Incluye el inicio
+  // y cada slot de 30' cubierto, pero NO el fin: a las 10:00 el barbero queda
+  // libre, así que ese slot no se bloquea.
+  const horasDelIntervalo = useCallback((inicio, horaFin, duracion) => {
+    const ini = normalizarHoraApi(inicio);
+    const fin = finDelTurno(inicio, horaFin, duracion);
+    if (!ini || !fin) return [];
+    const horas = [];
+    for (let m = horaAMinutos(ini); m < horaAMinutos(fin); m += 30) horas.push(minutosAHora(m));
+    return horas;
+  }, [normalizarHoraApi, finDelTurno]);
+
   // Consulta a la API qué horas ya están ocupadas para la fecha + barbero
-  // elegidos y guarda SOLO la hora de inicio de cada turno (ej. '10:30').
-  // Se re-ejecuta automáticamente (gracias al useEffect de abajo) cada
-  // vez que cambia el día seleccionado o el profesional.
+  // elegidos. Antes guardaba SOLO la hora de inicio; ahora expande cada turno
+  // a TODOS los slots que cubre su duración (un turno 09:00–10:00 ocupa
+  // también 09:30). Se re-ejecuta al cambiar el día o el profesional.
   const cargarDisponibilidad = useCallback(() => {
     if (!token || !fechaSeleccionada || !profesionalSeleccionado) return;  // falta sesión o falta elegir algo
     setLoadingAvailability(true);  // prende el indicador de carga
     obtenerTurnosDisponibles(fechaSeleccionada, profesionalSeleccionado, token)
-      .then((r) => setHorariosOcupadosApi((r?.turnosOcupados ?? []).map((t) => normalizarHoraApi(t.horaInicio)).filter(Boolean)))
+      .then((r) => {
+        const horas = (r?.turnosOcupados ?? []).flatMap((t) => horasDelIntervalo(t.horaInicio, t.horaFin, t.duracionReal));
+        setHorariosOcupadosApi([...new Set(horas)]);
+      })
       .catch(() => setHorariosOcupadosApi([]))
       .finally(() => setLoadingAvailability(false));  // siempre apaga el indicador de carga
-  }, [token, fechaSeleccionada, profesionalSeleccionado, normalizarHoraApi]);
+  }, [token, fechaSeleccionada, profesionalSeleccionado, horasDelIntervalo]);
   // Este useEffect "pegotea" la función al ciclo de vida: corre al montar y
   // CADA VEZ que cambia cargarDisponibilidad (que a su vez depende de token,
   // fechaSeleccionada y profesionalSeleccionado). Así, cambiar de día o de
@@ -381,7 +408,7 @@ function App() {
       setTurnosConfirmados(lista.map((t) => {
         const fechaIso = fechaAIso(t.fecha), hora = normalizarHoraApi(t.horaInicio);
         const estado = estadoDelTurno(t.estado, fechaIso, hora);
-        return { id: t.idTurno, emailCliente: currentUser.email, idProfesional: t.idProfesional ?? null, nombreProfesional: t.profesional, nombreServicio: t.servicio, precioServicio: t.precioTotal, fecha: fechaIso, hora, nombreCliente: currentUser.name, estado, ...datosDelDia(fechaIso) };
+        return { id: t.idTurno, emailCliente: currentUser.email, idProfesional: t.idProfesional ?? null, idServicio: t.idServicio ?? null, nombreProfesional: t.profesional, nombreServicio: t.servicio, precioServicio: t.precioTotal, fecha: fechaIso, hora, horaFin: normalizarHoraApi(t.horaFin), duracion: Number(t.duracionReal) || 30, nombreCliente: currentUser.name, estado, ...datosDelDia(fechaIso) };
       }));
     } catch (error) { if (error?.status === 401) expulsarPorSesion(); }
   }, [currentUser, token, expulsarPorSesion, normalizarHoraApi]);
@@ -412,7 +439,7 @@ function App() {
       setTurnosConfirmados(lista.map((t) => {
         const fechaIso = fechaAIso(t.fecha), hora = normalizarHoraApi(t.horaInicio);
         const estado = estadoDelTurno(t.estado, fechaIso, hora);
-        return { id: t.idTurno, idCliente: t.idCliente ?? null, emailCliente: t.email ?? '', idProfesional: t.idProfesional ?? null, idServicio: t.idServicio ?? null, nombreProfesional: t.profesional, nombreServicio: t.servicio, precioServicio: t.precioTotal, fecha: fechaIso, hora, nombreCliente: t.nombreCliente ?? '', telefonoCliente: t.telefono ?? '', estado, ...datosDelDia(fechaIso) };
+        return { id: t.idTurno, idCliente: t.idCliente ?? null, emailCliente: t.email ?? '', idProfesional: t.idProfesional ?? null, idServicio: t.idServicio ?? null, nombreProfesional: t.profesional, nombreServicio: t.servicio, precioServicio: t.precioTotal, fecha: fechaIso, hora, horaFin: normalizarHoraApi(t.horaFin), duracion: Number(t.duracionReal) || 30, nombreCliente: t.nombreCliente ?? '', telefonoCliente: String(t.telefono ?? '').replace(/\D/g, ''), estado, ...datosDelDia(fechaIso) };
       }));
     } catch (error) { if (error?.status === 401) expulsarPorSesion(); }
   }, [token, expulsarPorSesion, normalizarHoraApi]);
@@ -421,11 +448,35 @@ function App() {
   useEffect(() => { if (sesionIniciada && currentUser?.role === 'admin') cargarTurnosAdmin(); }, [sesionIniciada, cargarTurnosAdmin, currentUser?.role]);
 
   // ── Disponibilidad del día (horarios libres/ocupados) ──
-  // Construye el "mapa de ocupación": { [idBarbero]: { 'YYYY-MM-DD': ['10:30', ...] } }
-  // combinando el rango del calendario mensual (rangoReservado) con los turnos
-  // ya cargados (turnosConfirmados). `meter()` agrega una hora al mapa.
+  // Mapa de INTERVALOS ocupados:
+  // { [idBarbero]: { 'YYYY-MM-DD': [{ inicio, fin, inicioMin, finMin }] } }.
+  // Combina el rango del calendario mensual (rangoReservado) con los turnos ya
+  // cargados (turnosConfirmados). Los cancelados no ocupan agenda.
+  const intervalosReservados = useMemo(() => {
+    const snap = {};
+    const meter = (idProfesional, dayKey, inicio, horaFin, duracion) => {
+      if (idProfesional == null || dayKey == null) return;
+      const ini = normalizarHoraApi(inicio);
+      const fin = finDelTurno(inicio, horaFin, duracion);
+      if (!ini || !fin) return;
+      const bs = snap[idProfesional] ?? (snap[idProfesional] = {});
+      const lista = bs[dayKey] ?? (bs[dayKey] = []);
+      lista.push({ inicio: ini, fin, inicioMin: horaAMinutos(ini), finMin: horaAMinutos(fin) });
+    };
+    rangoReservado.forEach((t) => meter(t.idProfesional, fechaAIso(t.fecha), t.horaInicio, t.horaFin, t.duracionReal));
+    turnosConfirmados.forEach((b) => {
+      if (b.estado === 'Cancelado') return;
+      meter(b.idProfesional, b.fecha, b.hora, b.horaFin, b.duracion);
+    });
+    return snap;
+  }, [rangoReservado, turnosConfirmados, normalizarHoraApi, finDelTurno]);
+
+  // Mapa de ocupación por slot (el que consumen calendario, Inicio y MisTurnos):
+  // { [idBarbero]: { 'YYYY-MM-DD': ['09:00', '09:30', ...] } }. Se deriva del
+  // mapa de intervalos para que un turno largo bloquee TODOS los slots que pisa
+  // (antes solo se marcaba la hora de inicio y el resto parecía libre).
   const turnosOcupados = useMemo(() => {
-    const snap = {};  // el mapa arranca vacío; lo llenan los turnos de abajo
+    const snap = {};  // el mapa arranca vacío; lo llenan los intervalos de abajo
     const meter = (idProfesional, dayKey, time) => {  // marca una hora como ocupada
       if (idProfesional == null || dayKey == null || !time) return;
       // `?? (=)` crea el sub-objeto del barbero la primera vez que se lo usa:
@@ -433,14 +484,17 @@ function App() {
       const bs = snap[idProfesional] ?? (snap[idProfesional] = {});
       bs[dayKey] = [...(bs[dayKey] ?? []), time];
     };
-    rangoReservado.forEach((t) => {
-      const hora = normalizarHoraApi(t.horaInicio);
-      if (!hora) return;
-      meter(t.idProfesional, fechaAIso(t.fecha), hora);
+    Object.entries(intervalosReservados).forEach(([idProfesional, porFecha]) => {
+      Object.entries(porFecha).forEach(([dayKey, intervalos]) => {
+        intervalos.forEach(({ inicio, fin }) => {
+          for (let m = horaAMinutos(inicio); m < horaAMinutos(fin); m += 30) {
+            meter(idProfesional, dayKey, minutosAHora(m));
+          }
+        });
+      });
     });
-    turnosConfirmados.forEach((b) => meter(b.idProfesional, fechaAIso(b.fecha), b.hora));
     return snap;
-  }, [rangoReservado, turnosConfirmados, normalizarHoraApi]);
+  }, [intervalosReservados]);
 
   // ── Datos derivados del día seleccionado ──────────
   // Objeto completo del profesional/servicio elegido (para mostrar nombre y
@@ -448,6 +502,9 @@ function App() {
   // y termina en null si la lista todavía está vacía (cargando).
   const profesionalActual = profesionales.find((b) => b.id === profesionalSeleccionado) ?? profesionales[0] ?? null;
   const servicioActual = servicios.find((s) => s.id === servicioSeleccionado) ?? servicios[0] ?? null;
+  // Duración del servicio elegido: define cuántos slots ocupa el turno nuevo.
+  // Si todavía no cargó el catálogo, se asume el slot mínimo (30 min).
+  const duracionServicioSeleccionado = Number(servicioActual?.durationMinutes) > 0 ? Number(servicioActual.durationMinutes) : 30;
   // La 'T00:00:00' no es decorativa: sin ella, new Date('YYYY-MM-DD') se
   // interpreta como medianoche UTC y en Argentina (UTC-3) getDay() podría
   // devolver el día ANTERIOR. Con la T se ancla a medianoche local.
@@ -466,7 +523,23 @@ function App() {
   // disponibles" (se grisean en la grilla como los ocupados y el auto-ajuste
   // de la hora elige uno válido). El backend además los rechaza con 400.
   const horariosPasadosHoy = horariosPasados(fechaSeleccionada, horariosDelDia);
-  const horariosNoDisponibles = [...new Set([...horariosBloqueadosLocales, ...horariosOcupadosApi, ...horariosPasadosHoy])];  // sin duplicados
+  const horariosNoDisponibles = (() => {
+    const ocupados = new Set([...horariosBloqueadosLocales, ...horariosOcupadosApi, ...horariosPasadosHoy]);
+    // Además de los inicios ya ocupados, hay que bloquear los slots donde el
+    // turno NUEVO se solaparía hacia adelante con uno existente. Ej.: servicio
+    // de 60' a las 09:30 cuando ya hay otro de 09:00 a 10:00. El backend lo
+    // rechaza igual, pero así la UI no ofrece un horario inválido.
+    const intervalos = intervalosReservados[profesionalSeleccionado]?.[fechaSeleccionada] ?? [];
+    if (intervalos.length > 0 && duracionServicioSeleccionado > 0) {
+      horariosDelDia.forEach((slot) => {
+        if (ocupados.has(slot)) return;
+        const inicioSlot = horaAMinutos(slot);
+        const finSlot = inicioSlot + duracionServicioSeleccionado;
+        if (intervalos.some((iv) => inicioSlot < iv.finMin && finSlot > iv.inicioMin)) ocupados.add(slot);
+      });
+    }
+    return [...ocupados];  // sin duplicados
+  })();
   // DISPONIBLES = todos los horarios del día − los no disponibles
   const horariosLibres = horariosDelDia.filter((s) => !horariosNoDisponibles.includes(s));
   // Auto-ajuste de la hora elegida: si no quedan horarios la limpia; si el
@@ -557,6 +630,7 @@ function App() {
   const crearCuenta = async (event) => {
     event.preventDefault(); const { nombre, apellido, email, telefono, password } = formularioRegistro;
     if (!nombre.trim() || !apellido.trim() || !email.trim() || !password.trim() || !telefono.trim()) { setAvisoAcceso({ type: 'error', message: 'Completá nombre, apellido, mail, contraseña y whatsapp para registrarte.' }); return; }
+    if (!/^[0-9]{6,20}$/.test(telefono.trim())) { setAvisoAcceso({ type: 'error', message: 'El teléfono debe contener solo números (entre 6 y 20 dígitos).' }); return; }
     // El mismo mínimo de 8 que valida el server (server/validaciones.js).
     // Va del lado del cliente para no gastar un request y para que el mensaje
     // salga en la voz de la app y no en el del navegador.
@@ -609,6 +683,7 @@ function App() {
   const registrarTurno = async (event) => {
     event.preventDefault();
     if (!nombreCliente.trim() || !telefonoCliente.trim()) { setAviso({ type: 'error', message: 'Completá tu nombre y teléfono para confirmar el turno.' }); return; }
+    if (!/^[0-9]{6,20}$/.test(telefonoCliente.trim())) { setAviso({ type: 'error', message: 'El teléfono debe contener solo números (entre 6 y 20 dígitos).' }); return; }
     if (!currentUser?.idCliente) { setAviso({ type: 'error', message: 'Tu cuenta no está vinculada a un cliente de la base. Iniciá sesión con tu cuenta registrada.' }); return; }
     if (esDomingoOLunes) { setAviso({ type: 'error', message: 'No se pueden pedir turnos los domingos ni los lunes. Elegí de martes a sábado.' }); return; }
     if (fueraDeRango) { setAviso({ type: 'error', message: 'Solo se pueden pedir turnos desde hoy hasta dentro de un mes.' }); return; }
@@ -621,7 +696,7 @@ function App() {
       setAviso({ type: 'success', message: `Turno confirmado para ${nombreCliente.trim()} con ${profesionalActual.name} (${servicioActual.name}, $${servicioActual.price.toLocaleString('es-AR')}) el ${fechaFormateada.label} ${fechaFormateada.date} a las ${horaSeleccionada}.` });
       // Repone los campos con los datos del usuario logueado y limpia la hora
       // elegida para no dejar seleccionado un slot que ya no está libre.
-      setNombreCliente(currentUser?.name ?? ''); setTelefonoCliente(currentUser?.phone ?? ''); setHoraSeleccionada('');
+      setNombreCliente(currentUser?.name ?? ''); setTelefonoCliente(String(currentUser?.phone ?? '').replace(/\D/g, '')); setHoraSeleccionada('');
       // Refresca todo lo afectado por la nueva reserva:
       cargarDisponibilidad(); refrescarOcupados(); if (currentUser?.role === 'admin') await cargarTurnosAdmin(); else await cargarMisTurnos();
     } catch (error) { setAviso({ type: 'error', message: error.message || 'Error al reservar el turno.' }); }
@@ -682,8 +757,10 @@ function App() {
   // para que el modal se cierre automáticamente si salió bien.
   const registrarProfesional = async (nombreCompleto, email, telefono) => {
     const { nombre, apellido } = dividirNombre(nombreCompleto);
+    const tel = String(telefono ?? '').trim();
+    if (tel && !/^[0-9]{6,20}$/.test(tel)) return { ok: false, error: 'El teléfono debe contener solo números (entre 6 y 20 dígitos).' };
     try {
-      await crearProfesional({ nombre, apellido, email: email?.trim() || null, telefono: telefono?.trim() || null }, token);
+      await crearProfesional({ nombre, apellido, email: email?.trim() || null, telefono: tel || null }, token);
       await cargarProfesionales();
       await cargarTodosProfesionales();
       return { ok: true };
@@ -692,8 +769,10 @@ function App() {
   // Edita un profesional (misma lógica que el alta).
   const editarProfesional = async (id, nombreCompleto, email, telefono) => {
     const { nombre, apellido } = dividirNombre(nombreCompleto);
+    const tel = String(telefono ?? '').trim();
+    if (tel && !/^[0-9]{6,20}$/.test(tel)) return { ok: false, error: 'El teléfono debe contener solo números (entre 6 y 20 dígitos).' };
     try {
-      await actualizarProfesional(id, { nombre, apellido, email: email?.trim() || null, telefono: telefono?.trim() || null }, token);
+      await actualizarProfesional(id, { nombre, apellido, email: email?.trim() || null, telefono: tel || null }, token);
       await cargarProfesionales();
       await cargarTodosProfesionales();
       return { ok: true };

@@ -39,6 +39,30 @@ const { sql, getPool } = require("../conexion");
 // después deja pasar solo si el rol del token es "admin": son los dos candados
 // que separan la lectura pública de la edición.
 const { jwtMiddleware, requireAdmin } = require("../autenticacion");
+// errorId valida el :id de la URL antes de pasarlo a sql.Int.
+const { errorId } = require("../validaciones");
+
+// Reglas mínimas de datos del catálogo. La duración se limita a 8 horas
+// (480 min): un turno más largo que eso no entra en ningún horario de atención
+// y además rompería el cálculo de horaFin.
+const errorServicio = ({ nombre, precio, duracion_minutos }, { parcial = false } = {}) => {
+  if (!parcial || nombre !== undefined) {
+    const n = String(nombre ?? "").trim();
+    if (!n) return "El nombre del servicio es obligatorio.";
+    if (n.length > 100) return "El nombre no puede superar los 100 caracteres.";
+  }
+  if (!parcial || precio !== undefined) {
+    const p = Number(precio);
+    if (!Number.isFinite(p) || p < 0) return "El precio debe ser un número mayor o igual a 0.";
+  }
+  if (!parcial || duracion_minutos !== undefined) {
+    const d = Number(duracion_minutos);
+    if (!Number.isInteger(d) || d < 1 || d > 480) {
+      return "La duración debe ser un número entero de minutos entre 1 y 480.";
+    }
+  }
+  return null;
+};
 
 // ── CRUD servicios ────────────────────────────────────
 // GET /servicios — lista todos los servicios, ordenado por id.
@@ -69,6 +93,8 @@ router.post("/servicios", jwtMiddleware, requireAdmin, async (req, res) => {
   if (!nombre || precio == null || duracion_minutos == null) {
     return res.status(400).json({ error: "Nombre, precio y duración son obligatorios." });
   }
+  const errServicio = errorServicio({ nombre, precio, duracion_minutos });
+  if (errServicio) return res.status(400).json({ error: errServicio });
   try {
     const db = await getPool();
     // precio como DECIMAL(10,2) y duración como INT: los tipos los define
@@ -100,6 +126,10 @@ router.patch("/servicios/:id", jwtMiddleware, requireAdmin, async (req, res) => 
   if (nombre === undefined && precio === undefined && duracion_minutos === undefined) {
     return res.status(400).json({ error: "No hay campos para actualizar." });
   }
+  const errId = errorId(req.params.id);
+  if (errId) return res.status(400).json({ error: errId });
+  const errServicio = errorServicio({ nombre, precio, duracion_minutos }, { parcial: true });
+  if (errServicio) return res.status(400).json({ error: errServicio });
   try {
     const db = await getPool();
     // `set` acumula los fragmentos "columna = @param" que realmente llegaron;
@@ -129,6 +159,8 @@ router.patch("/servicios/:id", jwtMiddleware, requireAdmin, async (req, res) => 
 
 // DELETE /servicios/:id — borrado físico (solo admin).
 router.delete("/servicios/:id", jwtMiddleware, requireAdmin, async (req, res) => {
+  const errId = errorId(req.params.id);
+  if (errId) return res.status(400).json({ error: errId });
   try {
     const db = await getPool();
     // Borrado físico real (DELETE), con WHERE por id: si el id no existe, la

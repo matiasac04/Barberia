@@ -103,7 +103,18 @@ function IniciarSesion({ pantallaAcceso, avisoAcceso, iniciarSesion, crearCuenta
               {/* minLength/maxLength: validación nativa del navegador antes
                   de enviar; el backend también valida la longitud. */}
               <input type="password" placeholder="Contraseña (mínimo 8 caracteres)" minLength={8} maxLength={72} value={formularioRegistro.password} onChange={(e) => setFormularioRegistro((p) => ({ ...p, password: e.target.value }))} />
-              <input type="tel" placeholder="WhatsApp" value={formularioRegistro.telefono} onChange={(e) => setFormularioRegistro((p) => ({ ...p, telefono: e.target.value }))} />
+              {/* type="tel" + inputMode numérico: en el celular abre el teclado
+                  de números. El replace descarta letras o símbolos pegados; el
+                  backend vuelve a validar que sean solo dígitos. */}
+              <input
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={20}
+                placeholder="WhatsApp (solo números)"
+                value={formularioRegistro.telefono}
+                onChange={(e) => setFormularioRegistro((p) => ({ ...p, telefono: e.target.value.replace(/\D/g, '') }))}
+              />
             </div>
             <button className="auth-submit primary" type="submit">Crear cuenta</button>
             {/* type="button" evita que actúe como submit; vuelve al login. */}
